@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  python-gpu-container-gpu0:
+    build:
+      context: . # Path to the Dockerfile (current directory)
+      dockerfile: Dockerfile
+    shm_size: '128g'
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "0"  # Restrict to GPU 0
+      CUDA_HOME: "/usr/local/cuda"
+      LD_LIBRARY_PATH: "/usr/local/lib:/usr/lib:/lib:$LD_LIBRARY_PATH"
+    volumes:
+      - /data/siedel/datasets:/data
+      - /home/siedel/data/ImageNet:/data/ImageNet
+      - /home/siedel/data/TinyImageNet:/data/TinyImageNet
+      - /home/siedel/trained_models:/trained_models
+      - ./results:/workspace/results
+      - ./experiments/configs:/workspace/experiments/configs
+      - ./run_exp.py:/workspace/run_exp.py
+      - ./run_exp_1.py:/workspace/run_exp_1.py
+      - ./run_exp_2.py:/workspace/run_exp_2.py
+      - ./run_exp_3.py:/workspace/run_exp_3.py
+    command: ["taskset", "-c", "64-79", "/bin/bash"]
+    #command: python run_exp.py  # Run the main script for this container
+    tty: true
+
+  python-gpu-container-gpu1:
+    extends:
+      service: python-gpu-container-gpu0
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "1"  # Restrict to GPU 1
+    command: ["taskset", "-c", "80-95", "/bin/bash"]
+    #command: python run_exp_1.py  # Run a different script for this container
+    tty: true
+
+  python-gpu-container-gpu2:
+    extends:
+      service: python-gpu-container-gpu0
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "2"  # Restrict to GPU 2
+    command: ["taskset", "-c", "96-111", "/bin/bash"]
+    #command: python run_exp_2.py  # Run a different script for this container
+    tty: true
+
+  python-gpu-container-gpu3:
+    extends:
+      service: python-gpu-container-gpu0
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "3"  # Restrict to GPU 3
+    command: ["taskset", "-c", "112-127", "/bin/bash"] 
+    #command: python run_exp_3.py  # Run a different script for this container
+    tty: true
