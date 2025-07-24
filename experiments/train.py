@@ -27,7 +27,7 @@ from eval_corruptions import compute_c_corruptions
 from eval_adversarial import fast_gradient_validation
 
 import torch.backends.cudnn as cudnn
-from run_exp import device
+from run_0 import device
 
 if torch.cuda.is_available():
     cudnn.benchmark = False #this slightly speeds up 32bit precision training (5%). False helps achieve reproducibility

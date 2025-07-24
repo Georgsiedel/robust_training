@@ -146,6 +146,27 @@ def calculate_steps(dataset, batchsize, epochs, start_epoch, warmupepochs, valid
         else:
             trainsteps_per_epoch = round(0.8 * 50000 / batchsize + 0.5)
             validsteps_per_epoch = round(0.2 * 50000 / batchsize + 0.5)
+    elif dataset == 'GTSRB':
+        if validontest == True:
+            trainsteps_per_epoch = round(39209 / batchsize + 0.5)
+            validsteps_per_epoch = round(12630 / batchsize + 0.5)
+        else:
+            trainsteps_per_epoch = round(0.8 * 39209 / batchsize + 0.5)
+            validsteps_per_epoch = round(0.2 * 39209 / batchsize + 0.5)
+    elif dataset == 'PCAM':
+        if validontest == True:
+            trainsteps_per_epoch = round((262144+32768) / batchsize + 0.5)
+            validsteps_per_epoch = round(32768 / batchsize + 0.5)
+        else:
+            trainsteps_per_epoch = round(262144 / batchsize + 0.5)
+            validsteps_per_epoch = round(32768 / batchsize + 0.5)
+    elif dataset == 'EuroSAT':
+        if validontest == True:
+            trainsteps_per_epoch = round(0.8 * 27000 / batchsize + 0.5)
+            validsteps_per_epoch = round(0.2 * 27000 / batchsize + 0.5)
+        else:
+            trainsteps_per_epoch = round(0.8 * 0.8 * 27000 / batchsize + 0.5)
+            validsteps_per_epoch = round(0.8 * 0.2 * 27000 / batchsize + 0.5)        
 
     if validonc == True:
         validsteps_per_epoch += 1
@@ -512,7 +533,7 @@ class TestTracking:
         test_metrics_string = np.array(['Standard_Acc', 'RMSCE'])
         if self.test_on_c == True:
             test_corruptions_label = np.loadtxt(os.path.abspath(f'{self.c_labels_path}/c-labels.txt'), dtype=list)
-            if self.dataset == 'CIFAR10' or self.dataset == 'CIFAR100':
+            if self.dataset in ['CIFAR10', 'CIFAR100', 'GTSRB', 'EuroSAT', 'PCAM']:
                 test_corruptions_bar_label = np.loadtxt(os.path.abspath(f'{self.c_labels_path}/c-bar-labels-cifar.txt'), dtype=list)
             elif self.dataset == 'ImageNet' or self.dataset == 'TinyImageNet':
                 test_corruptions_bar_label = np.loadtxt(os.path.abspath(f'{self.c_labels_path}/c-bar-labels-IN.txt'), dtype=list)

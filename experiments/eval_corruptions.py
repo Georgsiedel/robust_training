@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from torch.utils.data import DataLoader
 from torchmetrics.classification import MulticlassCalibrationError
-from run_exp import device
+from run_0 import device
 from noise import apply_noise
 from utils import plot_images
 
@@ -45,7 +45,7 @@ def compute_c_corruptions(dataset, testsets_c, model, batchsize, num_classes, va
 
     accs_c, rmsce_c_list = [], []
     if valid_run == False:
-        print(f"Testing on {dataset}-c/c-bar Benchmark")
+        print(f"Testing on {dataset}-c/c-bar")
 
     t = torch.Generator()
     t.manual_seed(0) #ensure that the same testset is always used when we are not working with the fixed benchmarks

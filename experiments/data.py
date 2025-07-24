@@ -13,7 +13,7 @@ import torchvision
 from torch.utils.data import Subset, ConcatDataset, RandomSampler, BatchSampler, DataLoader
 import numpy as np
 import experiments.custom_transforms as custom_transforms
-from run_exp import device
+from run_0 import device
 from experiments.utils import plot_images, CsvHandler
 from experiments.custom_datasets import SubsetWithTransform, GeneratedDataset, AugmentedDataset, ListDataset, CustomDataset 
 from experiments.custom_datasets import BalancedRatioSampler, GroupedAugmentedDataset, ReproducibleBalancedRatioSampler, StyleDataset
@@ -36,7 +36,9 @@ def normalization_values(batch, dataset, normalized, manifold=False, manifold_fa
             mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(device)
             std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(device)
         else:
-            print('no normalization values set for this dataset')
+            mean = torch.tensor([0.5, 0.5, 0.5]).view(1, 3, 1, 1).to(device)
+            std = torch.tensor([0.5, 0.5, 0.5]).view(1, 3, 1, 1).to(device)
+            print('no normalization values set for this dataset, scaling to [-1,1]')
     else:
         mean = 0
         std = 1
@@ -62,14 +64,15 @@ class DataLoading():
         self.number_workers = number_workers
         self.kaggle = kaggle
 
-        if dataset == 'CIFAR10':
+        if dataset in ['CIFAR10', 'CIFAR100', 'GTSRB','ImageNet']:
             self.factor = 1
-        elif dataset == 'CIFAR100':
-            self.factor = 1
-        elif dataset == 'ImageNet':
-            self.factor = 1
-        elif dataset == 'TinyImageNet':
+        elif dataset in ['TinyImageNet', 'EuroSAT']:
             self.factor = 2
+        elif dataset in ['PCAM']:
+            self.factor = 3
+        else:
+            self.factor = 1
+
         
         file_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "paths.json")
         with open(file_path, "r") as f:
@@ -86,8 +89,11 @@ class DataLoading():
         t = transforms.ToTensor()
         c32 = transforms.RandomCrop(32, padding=4)
         c64 = transforms.RandomCrop(64, padding=8)
+        c96 = transforms.RandomCrop(96, padding=12)
         c224 = transforms.RandomCrop(224, padding=28)
         flip = transforms.RandomHorizontalFlip()
+        flip_v = transforms.RandomVerticalFlip()
+        r32 = transforms.Resize(32, antialias=True)
         r224 = transforms.Resize(224, antialias=True)
         r256 = transforms.Resize(256, antialias=True)
         cc224 = transforms.CenterCrop(224)
@@ -97,21 +103,28 @@ class DataLoading():
         # transformations of validation/test set and necessary transformations for training
         # always done (even for clean images while training, when using robust loss)
         if self.dataset == 'ImageNet':
-            self.transforms_preprocess = transforms.Compose([t, r256, cc224])
-        elif self.resize == True:
-            self.transforms_preprocess = transforms.Compose([t, r224])
+            self.transforms_preprocess = transforms.Compose([t])
+            self.transforms_preprocess_additional_test = transforms.Compose([r256, cc224])
+        elif self.dataset == 'GTSRB':
+            self.transforms_preprocess = transforms.Compose([t, r32])
         else:
             self.transforms_preprocess = transforms.Compose([t])
+        
+        if self.resize == True and self.dataset != 'ImageNet':
+            self.transforms_preprocess = transforms.Compose([t, r224])
 
         # standard augmentations of training set, without tensor transformation
         if self.dataset == 'ImageNet':
-            self.transforms_basic = transforms.Compose([flip])
-        elif self.resize:
-            self.transforms_basic = transforms.Compose([flip, c224])
-        elif self.dataset == 'CIFAR10' or self.dataset == 'CIFAR100':
+            self.transforms_basic = transforms.Compose([flip, rrc224])
+        elif self.dataset in ['CIFAR10', 'CIFAR100', 'GTSRB']:
             self.transforms_basic = transforms.Compose([flip, c32])
-        elif self.dataset == 'TinyImageNet':
+        elif self.dataset in ['TinyImageNet', 'EuroSAT']:
             self.transforms_basic = transforms.Compose([flip, c64])
+        elif self.dataset in ['PCAM']:
+            self.transforms_basic = transforms.Compose([flip, flip_v, c96])
+
+        if self.resize == True and self.dataset != 'ImageNet':
+            self.transforms_basic = transforms.Compose([flip, c224])
 
         self.stylization_orig, self.transforms_orig_after_style, self.transforms_orig_after_nostyle = custom_transforms.get_transforms_map(train_aug_strat_orig, re, self.dataset, self.factor, grouped_stylization, self.style_feats_path)
         self.stylization_gen, self.transforms_gen_after_style, self.transforms_gen_after_nostyle = custom_transforms.get_transforms_map(train_aug_strat_gen, re, self.dataset, self.factor, grouped_stylization, self.style_feats_path)
@@ -120,7 +133,15 @@ class DataLoading():
 
         if self.validontest:
 
-            if self.dataset == 'ImageNet' or self.dataset == 'TinyImageNet':
+            if self.dataset == 'ImageNet':
+                self.testset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/val'),
+                                                                transform=transforms.Compose([self.transforms_preprocess, self.transforms_preprocess_additional_test]))
+                if test_only:
+                    self.base_trainset = None
+                else:
+                    self.base_trainset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/train'))
+            
+            elif self.dataset == 'TinyImageNet':
                 self.testset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/val'),
                                                                 transform=self.transforms_preprocess)
                 if test_only:
@@ -128,7 +149,7 @@ class DataLoading():
                 else:
                     self.base_trainset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/train'))
 
-            elif self.dataset == 'CIFAR10' or self.dataset == 'CIFAR100':
+            elif self.dataset in ['CIFAR10', 'CIFAR100']:
                 load_helper = getattr(torchvision.datasets, self.dataset)
                 self.testset = load_helper(root=os.path.abspath(f'{self.data_path}'), train=False, download=True,
                                         transform=self.transforms_preprocess)
@@ -136,32 +157,93 @@ class DataLoading():
                     self.base_trainset = None
                 else:
                     self.base_trainset = load_helper(root=os.path.abspath(f'{self.data_path}'), train=True, download=True)
+            
+            elif self.dataset in ['GTSRB']:
+                load_helper = getattr(torchvision.datasets, self.dataset)
+                self.testset = load_helper(root=os.path.abspath(f'{self.data_path}'), split='test', download=True,
+                                        transform=self.transforms_preprocess)
+                if test_only:
+                    self.base_trainset = None
+                else:
+                    self.base_trainset = load_helper(root=os.path.abspath(f'{self.data_path}'), split='train', download=True)
+            elif self.dataset in ['PCAM']:
+                load_helper = getattr(torchvision.datasets, self.dataset)
+                self.testset = load_helper(root=os.path.abspath(f'{self.data_path}'), split='test', download=True,
+                                        transform=self.transforms_preprocess)
+                if test_only:
+                    self.base_trainset = None
+                else:
+                    valset = load_helper(root=os.path.abspath(f'{self.data_path}'), split='val', download=True)
+                    trainset = load_helper(root=os.path.abspath(f'{self.data_path}'), split='train', download=True)
+                    self.base_trainset = ConcatDataset([trainset, valset])
+            elif self.dataset == 'EuroSAT':
+                print('EuroSAT has no predefined test split. We use a custom seeded random split.')
+                load_helper = getattr(torchvision.datasets, self.dataset)
+                full_set = load_helper(root=os.path.abspath(f'{self.data_path}'), download=True)
                 
+                train_indices, val_indices, _, _ = train_test_split(
+                range(len(full_set)),
+                full_set.targets,
+                stratify=full_set.targets,
+                test_size=0.2,
+                random_state=0)
+
+                if test_only:
+                    self.base_trainset = None
+                else:
+                    self.base_trainset = Subset(full_set, train_indices)
+                self.testset = SubsetWithTransform(Subset(full_set, val_indices), transforms.Compose([self.transforms_preprocess]))
+
             else:
                 print('Dataset not loadable')
             
             self.num_classes = len(self.testset.classes)
         
         else:
-            if self.dataset == 'ImageNet' or self.dataset == 'TinyImageNet':
+            if self.dataset in ['ImageNet', 'TinyImageNet']:
                 base_trainset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/train'))
-            elif self.dataset == 'CIFAR10' or self.dataset == 'CIFAR100':
+            elif self.dataset in ['CIFAR10', 'CIFAR100']:
                 load_helper = getattr(torchvision.datasets, self.dataset)
                 base_trainset = load_helper(root=os.path.abspath(f'{self.data_path}'), train=True, download=True)
+            elif self.dataset in ['GTSRB']:
+                load_helper = getattr(torchvision.datasets, self.dataset)
+                base_trainset = load_helper(root=os.path.abspath(f'{self.data_path}'), split='train', download=True)
+            elif self.dataset in ['PCAM']:
+                load_helper = getattr(torchvision.datasets, self.dataset)
+                self.base_trainset = load_helper(root=os.path.abspath(f'{self.data_path}'), split='train', download=True)
+                self.testset = load_helper(root=os.path.abspath(f'{self.data_path}'), split='val', download=True)
+                self.num_classes = len(self.base_trainset.classes)
+                return  #PCAM already features train/val split, so we can return
+            elif self.dataset in ['EuroSAT']:
+                print('EuroSAT has no predefined test split. We use a custom seeded random split.')
+                load_helper = getattr(torchvision.datasets, self.dataset)
+                full_set = load_helper(root=os.path.abspath(f'{self.data_path}'), download=True)
+                
+                train_indices, val_indices, _, _ = train_test_split(
+                range(len(full_set)),
+                full_set.targets,
+                stratify=full_set.targets,
+                test_size=0.2,
+                random_state=0)
+
+                base_trainset = Subset(full_set, train_indices)
             else:
                 print('Dataset not loadable')  
         
-            validsplit = 0.2
             train_indices, val_indices, _, _ = train_test_split(
                 range(len(base_trainset)),
                 base_trainset.targets,
                 stratify=base_trainset.targets,
-                test_size=validsplit,
+                test_size=0.2,
                 random_state=self.run)  # same validation split for same runs, but new validation on multiple runs
-            self.base_trainset = Subset(base_trainset, train_indices)
-            validset = Subset(base_trainset, val_indices)
+            
+            if test_only == False:
+                self.base_trainset = Subset(base_trainset, train_indices)
 
-            self.testset = [(self.transforms_preprocess(data), target) for data, target in validset]
+            if self.dataset == 'ImageNet':
+                self.testset = SubsetWithTransform(Subset(base_trainset, val_indices), transforms.Compose([self.transforms_preprocess, self.transforms_preprocess_additional_test]))
+            else:
+                self.testset = SubsetWithTransform(Subset(base_trainset, val_indices), transforms.Compose([self.transforms_preprocess]))
                 
             self.num_classes = len(base_trainset.classes)
     
@@ -171,12 +253,17 @@ class DataLoading():
         return style_loader
 
         
-
     def load_augmented_traindata(self, target_size, epoch=0, robust_samples=0, grouped_stylization=False):
         self.robust_samples = robust_samples
         self.target_size = target_size
-        self.generated_dataset = np.load(os.path.abspath(f'{self.data_path}/{self.dataset}-add-1m-dm.npz'),
+        try:
+            self.generated_dataset = np.load(os.path.abspath(f'{self.data_path}/{self.dataset}-add-1m-dm.npz'),
                                     mmap_mode='r') if self.generated_ratio > 0.0 else None
+        except:
+            print(f'No synthetic data found for this dataset in {self.data_path}/{self.dataset}-add-1m-dm.npz')
+            self.generated_ratio = 0.0
+            self.generated_dataset = None
+
         self.epoch = epoch
 
         torch.manual_seed(self.epoch + self.epochs * self.run)
@@ -244,7 +331,43 @@ class DataLoading():
             self.trainset = GroupedAugmentedDataset(original_subset, generated_subset, self.transforms_basic, self.stylization_orig, 
                                     self.stylization_gen, self.transforms_orig_after_style, self.transforms_gen_after_style, 
                                     self.transforms_orig_after_nostyle, self.transforms_gen_after_nostyle, self.robust_samples, epoch)
+    
+    def precompute_and_append_c_data(self, set, c_datasets, corruption, csv_handler, subset, subsetsize, valid_run):
+        random_corrupted_testset = SubsetWithTransform(self.testset, 
+                                                    transform=custom_transforms.RandomCommonCorruptionTransform(set, corruption, self.dataset, csv_handler, self.resize))
+        if subset == True:
+            selected_indices = np.random.choice(len(self.testset), subsetsize, replace=False)
+            random_corrupted_testset = Subset(random_corrupted_testset, selected_indices)
+        
+        # If valid_run, precompute the transformed outputs and wrap them as a standard dataset. (we do not want to tranform every epoch)
+        if valid_run:
+            if corruption in ['caustic_refraction', 'sparkles']: #compute heavier corruptions
 
+                r = torch.Generator()
+                r.manual_seed(0) #ensure that the same testset is always used when generating random corruptions
+
+                precompute_loader = DataLoader(
+                    random_corrupted_testset,
+                    batch_size=1,
+                    shuffle=False,
+                    pin_memory=True,
+                    num_workers=self.number_workers,
+                    worker_init_fn=seed_worker,
+                    generator=r
+                )
+                
+                precomputed_samples = [(sample[0], label[0]) for sample, label in precompute_loader]
+                # Wrap the precomputed samples in a dataset so that further processing sees a standard Dataset object.
+                random_corrupted_testset = ListDataset(precomputed_samples)
+            
+            else:
+                precomputed_samples = [sample for sample in random_corrupted_testset]
+                #Wrap the precomputed samples in a dataset so that further processing sees a standard Dataset object.
+                random_corrupted_testset = ListDataset(precomputed_samples)
+                                
+        c_datasets.append(random_corrupted_testset)
+
+        return c_datasets
 
     def load_data_c(self, subset, subsetsize, valid_run):
 
@@ -281,43 +404,9 @@ class DataLoading():
                     c_datasets.append(concat_intensities)
 
                 else:
-                    random_corrupted_testset = SubsetWithTransform(self.testset, 
-                                                    transform=custom_transforms.RandomCommonCorruptionTransform(set, corruption, self.dataset, csv_handler))
-                    if subset == True:
-                        selected_indices = np.random.choice(len(self.testset), subsetsize, replace=False)
-                        random_corrupted_testset = Subset(random_corrupted_testset, selected_indices)
+                    c_datasets = self.precompute_and_append_c_data(set, c_datasets, corruption, csv_handler, subset, subsetsize, valid_run)
                     
-                    # If valid_run, precompute the transformed outputs and wrap them as a standard dataset. (we do not want to tranform every epoch)
-                    if valid_run:
-                        if corruption in ['caustic_refraction', 'sparkles']: #compute heavier corruptions
-
-                            r = torch.Generator()
-                            r.manual_seed(0) #ensure that the same testset is always used when generating random corruptions
-
-                            precompute_loader = DataLoader(
-                                random_corrupted_testset,
-                                batch_size=1,
-                                shuffle=False,
-                                pin_memory=True,
-                                num_workers=self.number_workers,
-                                worker_init_fn=seed_worker,
-                                generator=r
-                            )
-                            
-                            precomputed_samples = [(sample[0], label[0]) for sample, label in precompute_loader]
-                            # Wrap the precomputed samples in a dataset so that further processing sees a standard Dataset object.
-                            random_corrupted_testset = ListDataset(precomputed_samples)
-                        
-                        else:
-                            precomputed_samples = [sample for sample in random_corrupted_testset]
-                            #Wrap the precomputed samples in a dataset so that further processing sees a standard Dataset object.
-                            random_corrupted_testset = ListDataset(precomputed_samples)
-                                            
-                    c_datasets.append(random_corrupted_testset)
-                    
-
         elif self.dataset == 'ImageNet' or self.dataset == 'TinyImageNet':
-            #c-bar-corruption benchmark: https://github.com/facebookresearch/augmentation-corruption
 
             csv_handler = CsvHandler(os.path.abspath(f'{self.c_labels_path}/imagenet_c_bar.csv'))
             corruptions_bar = np.asarray(csv_handler.read_corruptions())
@@ -336,44 +425,19 @@ class DataLoading():
                     c_datasets.append(concat_intensities)
 
                 else:
-                    random_corrupted_testset = SubsetWithTransform(self.testset, 
-                                                    transform=custom_transforms.RandomCommonCorruptionTransform(set, corruption, self.dataset, csv_handler))
-                    if subset == True:
-                        selected_indices = np.random.choice(len(self.testset), subsetsize, replace=False)
-                        random_corrupted_testset = Subset(random_corrupted_testset, selected_indices)
-                    
-
-                    # If valid_run, precompute the transformed outputs and wrap them as a standard dataset (we do not want to online tranform every epoch)
-                    if valid_run:
-                        if corruption in ['caustic_refraction', 'sparkles']:  #compute heavier corruptions
-
-                            r = torch.Generator()
-                            r.manual_seed(0) #ensure that the same testset is always (run, epoch) used when generating random corruptions
-
-                            precompute_loader = DataLoader(
-                                random_corrupted_testset,
-                                batch_size=1,
-                                shuffle=False,
-                                pin_memory=True,
-                                num_workers=self.number_workers,
-                                worker_init_fn=seed_worker,
-                                generator=r
-                            )
-                            
-                            precomputed_samples = [(sample[0], label[0]) for sample, label in precompute_loader]
-                            # Wrap the precomputed samples in a dataset so that further processing sees a standard Dataset object.
-                            random_corrupted_testset = ListDataset(precomputed_samples)
-                        
-                        else:
-                            precomputed_samples = [sample for sample in random_corrupted_testset]
-                            #Wrap the precomputed samples in a dataset so that further processing sees a standard Dataset object.
-                            random_corrupted_testset = ListDataset(precomputed_samples)
-                                            
-                    c_datasets.append(random_corrupted_testset)
+                    c_datasets = self.precompute_and_append_c_data(set, c_datasets, corruption, csv_handler, subset, subsetsize, valid_run)
 
         else:
-            print('No corrupted benchmark available other than CIFAR10-c, CIFAR100-c, TinyImageNet-c and ImageNet-c.')
-            return
+            print('No unified c- and c-bar-benchmark available for this dataset. ' \
+            'Computing custom corruptions as in CIFAR, independent of whether validontest=True or False.')
+
+            csv_handler = CsvHandler(os.path.abspath(f'{self.c_labels_path}/cifar_c_bar.csv'))
+            corruptions_bar = csv_handler.read_corruptions()
+
+            corruptions = [(string, 'c') for string in corruptions_c] + [(string, 'c-bar') for string in corruptions_bar]
+            
+            for corruption, set in corruptions:
+                c_datasets = self.precompute_and_append_c_data(set, c_datasets, corruption, csv_handler, subset, subsetsize, valid_run)
 
         if valid_run == True:
             c_datasets = ConcatDataset(c_datasets)

@@ -12,7 +12,7 @@ import torch.distributions as dist
 from data import normalization_values
 from utils import plot_images
 from itertools import chain
-from run_exp import device
+from run_0 import device
 
 def random_erasing_style_mask(batch, noise_patch_lower_scale=0.3, noise_patch_upper_scale=1.0, ratio=[0.3, 3.3]):
         """Get image mask for Patched Noise. Rectangle fully inside the image, as in RandomErasing

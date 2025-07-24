@@ -5,7 +5,7 @@ import torch.utils
 from torch.utils.data import DataLoader, Subset
 import torchvision.transforms.v2 as transforms_v2
 import torchvision.transforms as transforms
-from run_exp import device
+from run_0 import device
 import gc
 import experiments.eval_corruption_transforms as c
 import torch
@@ -487,15 +487,20 @@ class NumpyToPil(object):
     def __call__(self, image):
         return Image.fromarray(image)
 
-def build_transform_c_bar(name, severity, dataset):
-    assert dataset in ['CIFAR10', 'CIFAR100', 'ImageNet', 'TinyImageNet'],\
+def build_transform_c_bar(name, severity, dataset, resize):
+    assert dataset in ['CIFAR10', 'CIFAR100', 'ImageNet', 'TinyImageNet', 'GTSRB', 'PCAM', 'EuroSAT'],\
             "Only cifar and imagenet image resolutions are supported."
     
-    if dataset in ['CIFAR10', 'CIFAR100']: 
+    if dataset in ['CIFAR10', 'CIFAR100', 'GTSRB']: 
         im_size = 32
-    elif dataset in ['TinyImageNet']: 
+    elif dataset in ['TinyImageNet', 'EuroSAT']: 
         im_size = 64
+    elif dataset in ['EuroSAT']:
+        im_size = 96
     else:
+        im_size = 224
+
+    if resize:
         im_size = 224
 
     transform_c_bar_list = [
@@ -580,7 +585,7 @@ def transform_c(image, severity=1, corruption_name=None, corruption_number=-1):
 
     if height == 32:
         scale = 'cifar'
-    elif height <= 64:
+    elif 32 < height <= 96:
         scale = 'tin'
     else: 
         scale = 'in'
@@ -609,7 +614,7 @@ def transform_c(image, severity=1, corruption_name=None, corruption_number=-1):
     return np.uint8(image_corrupted)
 
 class RandomCommonCorruptionTransform:
-    def __init__(self, set, corruption_name, dataset, csv_handler):
+    def __init__(self, set, corruption_name, dataset, csv_handler, resize):
         self.corruption_name = corruption_name
         self.set = set
         self.dataset = dataset
@@ -618,6 +623,7 @@ class RandomCommonCorruptionTransform:
         self.PILtoNP = PilToNumpy()
         self.NPtoPIL = NumpyToPil()
         self.ToTensor = transforms.ToTensor()
+        self.resize = resize
 
     def __call__(self, img):
         severity = random.randint(1, 5)
@@ -630,7 +636,7 @@ class RandomCommonCorruptionTransform:
             
             comp = transforms.Compose([self.TtoPIL,
                                 self.PILtoNP,
-                build_transform_c_bar(self.corruption_name, severity_value, self.dataset),
+                build_transform_c_bar(self.corruption_name, severity_value, self.dataset, self.resize),
                 self.NPtoPIL,
                 self.ToTensor
                 ])

@@ -7,7 +7,7 @@ import torchvision.transforms as transforms
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, Sampler, DataLoader
 import numpy as np
-from run_exp import device
+from run_0 import device
 
 def custom_collate_fn(batch, batch_transform_orig, batch_transform_gen, image_transform_orig, 
                       image_transform_gen, generated_ratio, batchsize):
@@ -451,9 +451,11 @@ class StyleDataset(Dataset):
             for file in os.listdir(root_dir)
             if file.endswith(".jpg")
         ]
-        if dataset_type in ["CIFAR10", "CIFAR100"]:
+        if dataset_type in ["CIFAR10", "CIFAR100", "GTSRB"]:
             self.transform = transforms.Resize((32, 32), antialias=True)
-        elif dataset_type == "TinyImageNet":
+        elif dataset_type in ["TinyImageNet", "EuroSAT"]:
+            self.transform = transforms.Resize((64, 64), antialias=True)
+        elif dataset_type == "PCAM":
             self.transform = transforms.Resize((64, 64), antialias=True)
         elif dataset_type == "ImageNet":
             self.transform = transforms.Resize((224, 224), antialias=True)

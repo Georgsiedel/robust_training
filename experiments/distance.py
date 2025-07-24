@@ -70,7 +70,7 @@ def get_nearest_oppo_dist(norm):
 
 
 if __name__ == '__main__':
-    #go one folder up to use the same path for loading CIFAR-10 then when executing run_exp.py
+    #go one folder up to use the same path for loading CIFAR-10 then when executing run.py
     os.chdir('..')
     #calling function above, saving distances sorted by value to csv file, visualizing min. distances as histogram
     dist = 2 #1, 2, np.inf

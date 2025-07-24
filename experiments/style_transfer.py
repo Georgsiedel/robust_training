@@ -16,7 +16,7 @@ import torch.nn as nn
 import torchvision.transforms.v2 as transforms
 import adaIN.model as adaINmodel
 import adaIN.utils as utils
-from run_exp import device as nst_device
+from run_0 import device as nst_device
 from experiments.utils import plot_images
 
 encoder_rel_path = 'adaIN/vgg_normalised.pth'

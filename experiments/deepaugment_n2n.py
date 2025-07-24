@@ -6,7 +6,7 @@ module_path = os.path.abspath(current_dir)
 if module_path not in sys.path:
     sys.path.append(module_path)
 
-from run_exp import device
+from run_0 import device
 
 ########################################################################################################
 ### Noise2Net
