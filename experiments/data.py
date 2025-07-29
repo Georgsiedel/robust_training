@@ -52,6 +52,45 @@ def seed_worker(worker_id):
     global fixed_worker_rng #impulse noise augmentations sk-learn function needs a separate rng for reproducibility
     fixed_worker_rng = np.random.default_rng()
 
+def extract_labels(dataset):
+    """
+    Return a flat list of labels (one entry per sample) for any dataset.
+    """
+    if hasattr(dataset, 'targets'):
+        # most vision datasets put labels here
+        return list(dataset.targets)
+    elif hasattr(dataset, 'labels'):
+        return list(dataset.labels)
+    elif hasattr(dataset, 'samples'):
+        # ImageFolder and friends
+        return [s[1] for s in dataset.samples]
+    else:
+        # worst case: iterate—but still O(N), same as splitting
+        return [dataset[i][1] for i in range(len(dataset))]
+
+def extract_classes(dataset, labels=None):
+    """
+    Return the class‑names in order, plus a mapping label→name.
+    """
+    # 1) if the dataset actually has names, use them
+    if hasattr(dataset, 'classes'):
+        classes = list(dataset.classes)
+    elif hasattr(dataset, 'class_to_idx'):
+        # invert the dict, sorted by the idx value
+        classes = [None] * len(dataset.class_to_idx)
+        for name, idx in dataset.class_to_idx.items():
+            classes[idx] = name
+    else:
+        # fall back to str(label) for each unique label
+        if labels is None:
+            labels = extract_labels(dataset)
+        unique = sorted(set(labels))
+        classes = [str(l) for l in unique]
+    # build name lookup if you like
+    name_map = {i: classes[i] for i in range(len(classes))}
+    return classes, name_map
+
+
 class DataLoading():
     def __init__(self, dataset, validontest=True, epochs=200, generated_ratio=0.0, 
                  resize = False, run=0, number_workers=0, kaggle=False):
@@ -180,25 +219,34 @@ class DataLoading():
                 print('EuroSAT has no predefined test split. We use a custom seeded random split.')
                 load_helper = getattr(torchvision.datasets, self.dataset)
                 full_set = load_helper(root=os.path.abspath(f'{self.data_path}'), download=True)
+
+                all_labels = extract_labels(full_set)
                 
                 train_indices, val_indices, _, _ = train_test_split(
                 range(len(full_set)),
-                full_set.targets,
-                stratify=full_set.targets,
+                all_labels,
+                stratify=all_labels,
                 test_size=0.2,
-                random_state=0)
+                random_state=0) #always with 0 seed - testset split should always be the same
 
                 if test_only:
                     self.base_trainset = None
                 else:
                     self.base_trainset = Subset(full_set, train_indices)
                 self.testset = SubsetWithTransform(Subset(full_set, val_indices), transforms.Compose([self.transforms_preprocess]))
-
+                
+                classes, _ = extract_classes(self.testset, labels=all_labels)
+                self.num_classes = len(classes)       
+                return    
+            
             else:
                 print('Dataset not loadable')
-            
-            self.num_classes = len(self.testset.classes)
-        
+
+            all_labels = extract_labels(self.testset)
+            classes, _ = extract_classes(self.testset, labels=all_labels)
+            self.num_classes = len(classes)
+            print(self.num_classes)
+
         else:
             if self.dataset in ['ImageNet', 'TinyImageNet']:
                 base_trainset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/train'))
@@ -219,17 +267,22 @@ class DataLoading():
                 load_helper = getattr(torchvision.datasets, self.dataset)
                 full_set = load_helper(root=os.path.abspath(f'{self.data_path}'), download=True)
                 
+                all_labels = extract_labels(full_set)
+                
                 train_indices, val_indices, _, _ = train_test_split(
                 range(len(full_set)),
-                full_set.targets,
-                stratify=full_set.targets,
+                all_labels,
+                stratify=all_labels,
                 test_size=0.2,
-                random_state=0)
+                random_state=0) #always with 0 seed - testset split should always be the same
 
                 base_trainset = Subset(full_set, train_indices)
+
             else:
                 print('Dataset not loadable')  
-        
+
+            all_labels = extract_labels(self.testset)
+
             train_indices, val_indices, _, _ = train_test_split(
                 range(len(base_trainset)),
                 base_trainset.targets,
@@ -245,7 +298,8 @@ class DataLoading():
             else:
                 self.testset = SubsetWithTransform(Subset(base_trainset, val_indices), transforms.Compose([self.transforms_preprocess]))
                 
-            self.num_classes = len(base_trainset.classes)
+            classes, _ = extract_classes(self.testset, labels=all_labels)
+            self.num_classes = len(classes)
     
     def load_style_dataloader(self, style_dir, batch_size):
         style_dataset = StyleDataset(style_dir, dataset_type=self.dataset)
@@ -342,7 +396,7 @@ class DataLoading():
         # If valid_run, precompute the transformed outputs and wrap them as a standard dataset. (we do not want to tranform every epoch)
         if valid_run:
             if corruption in ['caustic_refraction', 'sparkles']: #compute heavier corruptions
-
+                print(corruption)
                 r = torch.Generator()
                 r.manual_seed(0) #ensure that the same testset is always used when generating random corruptions
 
@@ -351,7 +405,7 @@ class DataLoading():
                     batch_size=1,
                     shuffle=False,
                     pin_memory=True,
-                    num_workers=self.number_workers,
+                    num_workers=0,#because of some pickle error with multiprocessing
                     worker_init_fn=seed_worker,
                     generator=r
                 )
@@ -428,8 +482,9 @@ class DataLoading():
                     c_datasets = self.precompute_and_append_c_data(set, c_datasets, corruption, csv_handler, subset, subsetsize, valid_run)
 
         else:
-            print('No unified c- and c-bar-benchmark available for this dataset. ' \
-            'Computing custom corruptions as in CIFAR, independent of whether validontest=True or False.')
+            if self.validontest:
+                print('No c- and c-bar-benchmark available for this dataset. ' \
+                'Computing custom corruptions as in CIFAR.')
 
             csv_handler = CsvHandler(os.path.abspath(f'{self.c_labels_path}/cifar_c_bar.csv'))
             corruptions_bar = csv_handler.read_corruptions()

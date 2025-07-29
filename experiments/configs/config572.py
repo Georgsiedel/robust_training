@@ -15,10 +15,10 @@ concurrent_combinations = 1 #only has an effect if combine_train_corruption is T
 
 batchsize = 256
 minibatchsize = 8
-dataset = 'EuroSAT' #ImageNet #CIFAR100 #CIFAR10 #TinyImageNet
+dataset = 'PCAM' #ImageNet #CIFAR100 #CIFAR10 #TinyImageNet #EuroSAT #PCAM #GTSRB
 generated_ratio = 0.5
 normalize = True
-validontest = False
+validontest = True
 validonc = True
 validonadv = False
 lrschedule = 'CosineAnnealingWarmRestarts'
