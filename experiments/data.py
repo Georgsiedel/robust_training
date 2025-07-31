@@ -15,7 +15,7 @@ import numpy as np
 import experiments.custom_transforms as custom_transforms
 from run_0 import device
 from experiments.utils import plot_images, CsvHandler
-from experiments.custom_datasets import SubsetWithTransform, GeneratedDataset, AugmentedDataset, ListDataset, CustomDataset 
+from experiments.custom_datasets import SubsetWithTransform, NumpyDataset, AugmentedDataset, ListDataset, CustomDataset 
 from experiments.custom_datasets import BalancedRatioSampler, GroupedAugmentedDataset, ReproducibleBalancedRatioSampler, StyleDataset
 
 def normalization_values(batch, dataset, normalized, manifold=False, manifold_factor=1):
@@ -89,6 +89,7 @@ class DataLoading():
         t = transforms.ToTensor()
         c32 = transforms.RandomCrop(32, padding=4)
         c64 = transforms.RandomCrop(64, padding=8)
+        c64_WM = transforms.RandomCrop(64, padding=12)
         c96 = transforms.RandomCrop(96, padding=12)
         c224 = transforms.RandomCrop(224, padding=28)
         flip = transforms.RandomHorizontalFlip()
@@ -107,6 +108,9 @@ class DataLoading():
             self.transforms_preprocess_additional_test = transforms.Compose([r256, cc224])
         elif self.dataset == 'GTSRB':
             self.transforms_preprocess = transforms.Compose([t, r32])
+        elif self.dataset == 'WaferMap':
+            #https://github.com/Junliangwangdhu/WaferMap/tree/master
+            self.transforms_preprocess = transforms.Compose([t, c64_WM])
         else:
             self.transforms_preprocess = transforms.Compose([t])
         
@@ -122,6 +126,8 @@ class DataLoading():
             self.transforms_basic = transforms.Compose([flip, c64])
         elif self.dataset in ['PCAM']:
             self.transforms_basic = transforms.Compose([flip, flip_v, c96])
+        elif self.dataset in ['WaferMap']:
+            self.transforms_basic = transforms.Compose([flip, flip_v])
 
         if self.resize == True and self.dataset != 'ImageNet':
             self.transforms_basic = transforms.Compose([flip, c224])
@@ -193,7 +199,28 @@ class DataLoading():
                 else:
                     self.base_trainset = Subset(full_set, train_indices)
                 self.testset = SubsetWithTransform(Subset(full_set, val_indices), transforms.Compose([self.transforms_preprocess]))
+            
+            elif self.dataset == 'WaferMap':
+                print('WaferMap has no predefined test split. We use a custom seeded random split.')
+                data=np.load(os.path.join(f'{self.data_path}/MixedWM38.npz'))
+                print(data)
+                x = data["arr_0"]
+                y = data["arr_1"]
+                
+                x_train, x_test, y_train, y_test = train_test_split(
+                x,
+                y,
+                stratify=y,
+                test_size=0.2,
+                random_state=0)
 
+                if test_only:
+                    self.base_trainset = None
+                else:
+                    self.base_trainset = NumpyDataset(x_train, y_train)
+                self.testset = NumpyDataset(x_test, y_test, transform=self.transforms_preprocess)
+                print(len(self.testset), len(self.base_trainset))
+            
             else:
                 print('Dataset not loadable')
             
@@ -290,7 +317,7 @@ class DataLoading():
             if self.num_generated > 0 and self.generated_dataset is not None:
                 generated_indices = np.random.choice(len(self.generated_dataset['label']), size=self.num_generated, replace=False)
 
-                generated_subset = GeneratedDataset(
+                generated_subset = NumpyDataset(
                     self.generated_dataset['image'][generated_indices],
                     self.generated_dataset['label'][generated_indices],
                     transform=self.transforms_preprocess
@@ -320,7 +347,7 @@ class DataLoading():
             if self.num_generated > 0 and self.generated_dataset is not None:
                 generated_indices = np.random.choice(len(self.generated_dataset['label']), size=self.num_generated, replace=False)
 
-                generated_subset = GeneratedDataset(
+                generated_subset = NumpyDataset(
                     self.generated_dataset['image'][generated_indices],
                     self.generated_dataset['label'][generated_indices],
                     transform=self.transforms_preprocess

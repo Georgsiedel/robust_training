@@ -50,7 +50,7 @@ class SwaLoader():
 
         return swa_dataloader
     
-class GeneratedDataset(Dataset):
+class NumpyDataset(Dataset):
     def __init__(self, images, labels, transform=None):
         self.images = images
         self.labels = labels
