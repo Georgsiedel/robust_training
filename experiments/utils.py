@@ -148,11 +148,11 @@ def calculate_steps(dataset, batchsize, epochs, start_epoch, warmupepochs, valid
             validsteps_per_epoch = round(0.2 * 50000 / batchsize + 0.5)
     elif dataset == 'GTSRB':
         if validontest == True:
-            trainsteps_per_epoch = round(39209 / batchsize + 0.5)
+            trainsteps_per_epoch = round(26640 / batchsize + 0.5)
             validsteps_per_epoch = round(12630 / batchsize + 0.5)
         else:
-            trainsteps_per_epoch = round(0.8 * 39209 / batchsize + 0.5)
-            validsteps_per_epoch = round(0.2 * 39209 / batchsize + 0.5)
+            trainsteps_per_epoch = round(0.8 * 26640 / batchsize + 0.5)
+            validsteps_per_epoch = round(0.2 * 26640 / batchsize + 0.5)
     elif dataset == 'PCAM':
         if validontest == True:
             trainsteps_per_epoch = round((262144+32768) / batchsize + 0.5)

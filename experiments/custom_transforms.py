@@ -495,7 +495,7 @@ def build_transform_c_bar(name, severity, dataset, resize):
         im_size = 32
     elif dataset in ['TinyImageNet', 'EuroSAT']: 
         im_size = 64
-    elif dataset in ['EuroSAT']:
+    elif dataset in ['PCAM']:
         im_size = 96
     else:
         im_size = 224

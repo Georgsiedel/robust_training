@@ -18,10 +18,10 @@ services:
       - /home/siedel/trained_models:/trained_models
       - ./results:/workspace/results
       - ./experiments/configs:/workspace/experiments/configs
-      - ./run_exp.py:/workspace/run_exp.py
-      - ./run_exp_1.py:/workspace/run_exp_1.py
-      - ./run_exp_2.py:/workspace/run_exp_2.py
-      - ./run_exp_3.py:/workspace/run_exp_3.py
+      - ./run_0.py:/workspace/run_0.py
+      - ./run_1.py:/workspace/run_1.py
+      - ./run_2.py:/workspace/run_2.py
+      - ./run_3.py:/workspace/run_3.py
     command: ["taskset", "-c", "64-79", "/bin/bash"]
     #command: python run_exp.py  # Run the main script for this container
     tty: true
