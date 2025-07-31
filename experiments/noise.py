@@ -86,7 +86,7 @@ def apply_noise_add_and_mult(batch, minibatchsize, corruptions, normalized, data
     if corruptions is None:
         return batch
     #Calculate the mean values for each channel across all images
-    mean, std = normalization_values(batch, dataset, normalized, manifold, manifold_factor)
+    mean, std = normalization_values(batch, dataset, normalized, manifold, manifold_factor, verbose=False)
     minibatches = batch.view(-1, minibatchsize, batch.size()[1], batch.size()[2], batch.size()[3])
     new_batches = []
     for id, minibatch in enumerate(minibatches):
@@ -224,7 +224,7 @@ def apply_noise(batch, minibatchsize, corruptions, concurrent_combinations, norm
     if corruptions is None:
         return batch
     #Calculate the mean values for each channel across all images
-    mean, std = normalization_values(batch, dataset, normalized, manifold, manifold_factor)
+    mean, std = normalization_values(batch, dataset, normalized, manifold, manifold_factor, verbose=False)
 
     # Throw out noise outside Gaussian, (L0) and Linf for manifold noise (since epsilon is dependent on dimensionality)
     if manifold:

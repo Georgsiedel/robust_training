@@ -12,13 +12,16 @@ from sklearn.model_selection import train_test_split
 import torchvision
 from torch.utils.data import Subset, ConcatDataset, RandomSampler, BatchSampler, DataLoader
 import numpy as np
+from PIL import Image
+from torchvision.datasets import ImageFolder
+from torchvision import transforms
 import experiments.custom_transforms as custom_transforms
 from run_0 import device
 from experiments.utils import plot_images, CsvHandler
 from experiments.custom_datasets import SubsetWithTransform, GeneratedDataset, AugmentedDataset, ListDataset, CustomDataset 
 from experiments.custom_datasets import BalancedRatioSampler, GroupedAugmentedDataset, ReproducibleBalancedRatioSampler, StyleDataset
 
-def normalization_values(batch, dataset, normalized, manifold=False, manifold_factor=1):
+def normalization_values(batch, dataset, normalized, manifold=False, manifold_factor=1, verbose=False):
 
     if manifold:
         mean = torch.mean(batch, dim=(0, 2, 3), keepdim=True).to(device)
@@ -38,7 +41,8 @@ def normalization_values(batch, dataset, normalized, manifold=False, manifold_fa
         else:
             mean = torch.tensor([0.5, 0.5, 0.5]).view(1, 3, 1, 1).to(device)
             std = torch.tensor([0.5, 0.5, 0.5]).view(1, 3, 1, 1).to(device)
-            print('no normalization values set for this dataset, scaling to [-1,1]')
+            if verbose:
+                print('no normalization values set for this dataset, scaling to [-1,1]')
     else:
         mean = 0
         std = 1
@@ -132,7 +136,7 @@ class DataLoading():
         c224 = transforms.RandomCrop(224, padding=28)
         flip = transforms.RandomHorizontalFlip()
         flip_v = transforms.RandomVerticalFlip()
-        r32 = transforms.Resize(32, antialias=True)
+        r32 = transforms.Resize((32,32), antialias=True)
         r224 = transforms.Resize(224, antialias=True)
         r256 = transforms.Resize(256, antialias=True)
         cc224 = transforms.CenterCrop(224)
@@ -167,7 +171,25 @@ class DataLoading():
 
         self.stylization_orig, self.transforms_orig_after_style, self.transforms_orig_after_nostyle = custom_transforms.get_transforms_map(train_aug_strat_orig, re, self.dataset, self.factor, grouped_stylization, self.style_feats_path)
         self.stylization_gen, self.transforms_gen_after_style, self.transforms_gen_after_nostyle = custom_transforms.get_transforms_map(train_aug_strat_gen, re, self.dataset, self.factor, grouped_stylization, self.style_feats_path)
+    
+    def convert_pcam_to_imagefolder(self, pcam_dataset, split_name):
+                    split_dir = os.path.join(self.data_path, f"PCAM_{split_name}_images")
+                    os.makedirs(os.path.join(split_dir, "0"), exist_ok=True)  # Class 0 folder
+                    os.makedirs(os.path.join(split_dir, "1"), exist_ok=True)  # Class 1 folder
 
+                    print(f"Converting {split_name} split to ImageFolder at: {split_dir}")
+                    for idx in range(len(pcam_dataset)):
+                        img, label = pcam_dataset[idx]  # img can be PIL.Image or Tensor
+
+                        if isinstance(img, torch.Tensor):  # Convert tensor to PIL if needed
+                            img = transforms.ToPILImage()(img)
+
+                        # Now img is guaranteed to be a PIL Image, so we can save directly
+                        img_path = os.path.join(split_dir, str(int(label)), f"{idx}.png")
+                        img.save(img_path)
+
+                    return split_dir
+    
     def load_base_data(self, test_only=False):
 
         if self.validontest:
@@ -206,17 +228,28 @@ class DataLoading():
                 else:
                     self.base_trainset = load_helper(root=os.path.abspath(f'{self.data_path}'), split='train', download=True)
             elif self.dataset in ['PCAM']:
-                load_helper = getattr(torchvision.datasets, self.dataset)
-                self.testset = load_helper(root=os.path.abspath(f'{self.data_path}'), split='test', download=True,
-                                        transform=self.transforms_preprocess)
+                #load once from torchvision and convert to imagefolder to allow pickle with multiple workers
+                #load_helper = getattr(torchvision.datasets, self.dataset)
+                #self.base_trainset = load_helper(root=os.path.abspath(f'{self.data_path}'), split='train', download=True)
+                #self.testset = load_helper(root=os.path.abspath(f'{self.data_path}'), split='val', download=True)
+                #test = load_helper(root=os.path.abspath(f'{self.data_path}'), split='test', download=True)
+
+                # Convert train and test sets
+                #train_dir = self.convert_pcam_to_imagefolder(self.base_trainset, "train")
+                #val_dir = self.convert_pcam_to_imagefolder(self.testset, "val")
+                #test_dir = self.convert_pcam_to_imagefolder(test, "test")                
+                
+                self.testset = ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/PCAM_test_images'), transform=self.transforms_preprocess)
+
                 if test_only:
                     self.base_trainset = None
                 else:
-                    valset = load_helper(root=os.path.abspath(f'{self.data_path}'), split='val', download=True)
-                    trainset = load_helper(root=os.path.abspath(f'{self.data_path}'), split='train', download=True)
+                    valset = ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/PCAM_val_images'))
+                    trainset = ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/PCAM_train_images'))
                     self.base_trainset = ConcatDataset([trainset, valset])
+            
             elif self.dataset == 'EuroSAT':
-                print('EuroSAT has no predefined test split. We use a custom seeded random split.')
+                print('EuroSAT has no predefined test split. Using a custom seeded random split.')
                 load_helper = getattr(torchvision.datasets, self.dataset)
                 full_set = load_helper(root=os.path.abspath(f'{self.data_path}'), download=True)
 
@@ -245,7 +278,6 @@ class DataLoading():
             all_labels = extract_labels(self.testset)
             classes, _ = extract_classes(self.testset, labels=all_labels)
             self.num_classes = len(classes)
-            print(self.num_classes)
 
         else:
             if self.dataset in ['ImageNet', 'TinyImageNet']:
@@ -257,13 +289,16 @@ class DataLoading():
                 load_helper = getattr(torchvision.datasets, self.dataset)
                 base_trainset = load_helper(root=os.path.abspath(f'{self.data_path}'), split='train', download=True)
             elif self.dataset in ['PCAM']:
-                load_helper = getattr(torchvision.datasets, self.dataset)
-                self.base_trainset = load_helper(root=os.path.abspath(f'{self.data_path}'), split='train', download=True)
-                self.testset = load_helper(root=os.path.abspath(f'{self.data_path}'), split='val', download=True)
+                #Convert to ImageFolder from torchvision once, see above
+
+                self.base_trainset = ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/PCAM_train_images'))
+                self.testset = ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/PCAM_val_images'), transform=self.transforms_preprocess)
+
                 self.num_classes = len(self.base_trainset.classes)
                 return  #PCAM already features train/val split, so we can return
+            
             elif self.dataset in ['EuroSAT']:
-                print('EuroSAT has no predefined test split. We use a custom seeded random split.')
+                print('EuroSAT has no predefined test split. Using a custom seeded random split.')
                 load_helper = getattr(torchvision.datasets, self.dataset)
                 full_set = load_helper(root=os.path.abspath(f'{self.data_path}'), download=True)
                 
@@ -396,7 +431,6 @@ class DataLoading():
         # If valid_run, precompute the transformed outputs and wrap them as a standard dataset. (we do not want to tranform every epoch)
         if valid_run:
             if corruption in ['caustic_refraction', 'sparkles']: #compute heavier corruptions
-                print(corruption)
                 r = torch.Generator()
                 r.manual_seed(0) #ensure that the same testset is always used when generating random corruptions
 
@@ -484,7 +518,7 @@ class DataLoading():
         else:
             if self.validontest:
                 print('No c- and c-bar-benchmark available for this dataset. ' \
-                'Computing custom corruptions as in CIFAR.')
+                'Computing custom corruptions as in CIFAR-C and CIFAR-C-bar.')
 
             csv_handler = CsvHandler(os.path.abspath(f'{self.c_labels_path}/cifar_c_bar.csv'))
             corruptions_bar = csv_handler.read_corruptions()

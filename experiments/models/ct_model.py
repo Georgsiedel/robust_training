@@ -20,6 +20,7 @@ class CtModel(nn.Module):
             normalized=normalized,
             manifold=False,
             manifold_factor=1,
+            verbose=True
         )
         if normalized:
             self.register_buffer("mu", self.mean)
