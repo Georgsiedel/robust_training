@@ -27,6 +27,12 @@ class CtModel(nn.Module):
             self.register_buffer("sigma", self.std)
 
         self.deepaugment_instance = None
+        
+    def forward_handle_greyscale(self, x):
+        if x.shape[1] == 1:  # Grayscale → RGB
+            return x.repeat(1, 3, 1, 1)
+        else:
+            return x
 
     def forward_normalize(self, x):
         if self.normalized:

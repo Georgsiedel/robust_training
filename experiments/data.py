@@ -5,7 +5,6 @@ import json
 import gc
 
 import torch
-import torch.cuda.amp
 import torchvision.transforms as transforms
 import torchvision.transforms.v2 as transforms_v2
 from sklearn.model_selection import train_test_split
@@ -85,12 +84,27 @@ def extract_classes(dataset, labels=None):
         for name, idx in dataset.class_to_idx.items():
             classes[idx] = name
     else:
-        # fall back to str(label) for each unique label
+        # 2) Otherwise we must derive from labels
         if labels is None:
             labels = extract_labels(dataset)
-        unique = sorted(set(labels))
-        classes = [str(l) for l in unique]
-    # build name lookup if you like
+
+        # 2a) If labels are 1D numpy arrays (one-hot / multi-hot):
+        if (
+            isinstance(labels, (list, tuple, np.ndarray))
+            and len(labels) > 0
+            and isinstance(labels[0], np.ndarray)
+            and labels[0].ndim == 1
+        ):
+            num_classes = labels[0].shape[0]
+            # here we just name them "0","1",... or you could use custom names
+            classes = [str(i) for i in range(num_classes)]
+
+        else:
+            # 2b) fallback for scalar labels
+            unique = sorted(set(labels))
+            classes = [str(l) for l in unique]
+
+    # build the lookup
     name_map = {i: classes[i] for i in range(len(classes))}
     return classes, name_map
 
@@ -109,7 +123,7 @@ class DataLoading():
 
         if dataset in ['CIFAR10', 'CIFAR100', 'GTSRB','ImageNet']:
             self.factor = 1
-        elif dataset in ['TinyImageNet', 'EuroSAT']:
+        elif dataset in ['TinyImageNet', 'EuroSAT', 'Wafermap']:
             self.factor = 2
         elif dataset in ['PCAM']:
             self.factor = 3
@@ -153,7 +167,12 @@ class DataLoading():
             self.transforms_preprocess = transforms.Compose([t, r32])
         elif self.dataset == 'WaferMap':
             #https://github.com/Junliangwangdhu/WaferMap/tree/master
-            self.transforms_preprocess = transforms.Compose([t, c64_WM])
+            self.transforms_preprocess = transforms.Compose([
+                t,
+                custom_transforms.ToFloat32(),
+                custom_transforms.DivideBy2(),
+                c64_WM
+            ])
         else:
             self.transforms_preprocess = transforms.Compose([t])
         
@@ -279,9 +298,8 @@ class DataLoading():
                 return    
                         
             elif self.dataset == 'WaferMap':
-                print('WaferMap has no predefined test split. We use a custom seeded random split.')
+                print('WaferMap has no predefined test split. Using a custom seeded random split.')
                 data=np.load(os.path.join(f'{self.data_path}/MixedWM38.npz'))
-                print(data)
                 x = data["arr_0"]
                 y = data["arr_1"]
                 
@@ -297,7 +315,6 @@ class DataLoading():
                 else:
                     self.base_trainset = NumpyDataset(x_train, y_train)
                 self.testset = NumpyDataset(x_test, y_test, transform=self.transforms_preprocess)
-                print(len(self.testset), len(self.base_trainset))
             
             else:
                 print('Dataset not loadable')
@@ -340,15 +357,30 @@ class DataLoading():
 
                 base_trainset = Subset(full_set, train_indices)
 
+            elif self.dataset == 'WaferMap':
+                print('WaferMap has no predefined test split. Using a custom seeded random split.')
+                data=np.load(os.path.join(f'{self.data_path}/MixedWM38.npz'))
+                x = data["arr_0"]
+                y = data["arr_1"]
+                
+                x_train, _, y_train, _ = train_test_split(
+                x,
+                y,
+                stratify=y,
+                test_size=0.2,
+                random_state=0)
+
+                base_trainset = NumpyDataset(x_train, y_train)
+
             else:
                 print('Dataset not loadable')  
 
-            all_labels = extract_labels(self.testset)
+            all_labels = extract_labels(base_trainset)
 
             train_indices, val_indices, _, _ = train_test_split(
                 range(len(base_trainset)),
-                base_trainset.targets,
-                stratify=base_trainset.targets,
+                all_labels,
+                stratify=all_labels,
                 test_size=0.2,
                 random_state=self.run)  # same validation split for same runs, but new validation on multiple runs
             
@@ -359,7 +391,7 @@ class DataLoading():
                 self.testset = SubsetWithTransform(Subset(base_trainset, val_indices), transforms.Compose([self.transforms_preprocess, self.transforms_preprocess_additional_test]))
             else:
                 self.testset = SubsetWithTransform(Subset(base_trainset, val_indices), transforms.Compose([self.transforms_preprocess]))
-                
+            
             classes, _ = extract_classes(self.testset, labels=all_labels)
             self.num_classes = len(classes)
     
@@ -426,7 +458,6 @@ class DataLoading():
                                             self.transforms_orig_after_nostyle, self.transforms_gen_after_nostyle, self.robust_samples)
 
         else:
-
             if self.num_original > 0:
                 original_indices = torch.randperm(len(self.base_trainset))[:self.num_original]
                 original_subset = SubsetWithTransform(Subset(self.base_trainset, original_indices), self.transforms_preprocess)

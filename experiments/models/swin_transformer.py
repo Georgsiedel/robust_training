@@ -438,6 +438,7 @@ class SwinTransformer(ct_model.CtModel):
                 noise_sparsity=0.0, noise_patch_lower_scale = 1.0, noise_patch_upper_scale=1.0, generated_ratio=0.0, 
                 n2n_deepaugment=False, style_feats=None, **kwargs):
         
+        x = super(SwinTransformer, self).forward_handle_greyscale(x)
         x = super(SwinTransformer, self).forward_normalize(x)
         x, mixed_targets = super(SwinTransformer, self).noise_mixup(x, targets, robust_samples, corruptions, mixup_alpha, 
                                     mixup_p, cutmix_alpha, cutmix_p, noise_minibatchsize, concurrent_combinations, 

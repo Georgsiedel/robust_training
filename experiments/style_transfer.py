@@ -14,6 +14,7 @@ if module_path not in sys.path:
 import torch
 import torch.nn as nn
 import torchvision.transforms.v2 as transforms
+import torchvision.transforms.functional as F
 import adaIN.model as adaINmodel
 import adaIN.utils as utils
 from run_0 import device as nst_device
@@ -47,10 +48,11 @@ def load_feat_files(path):
     style_feats_tensor = style_feats_tensor.to(nst_device)
     return style_feats_tensor
 
+
 class NSTTransform(transforms.Transform):
-
-    """ A class to apply neural style transfer with the help of adaIN to datasets in the training pipeline.
-
+    """
+    A class to apply neural style transfer with AdaIN to datasets in the training pipeline.
+    Now supports both RGB (3-channel) and grayscale (1-channel) images.
     Parameters:
 
     style_feats: Style features extracted from the style images using adaIN Encoder
@@ -63,14 +65,20 @@ class NSTTransform(transforms.Transform):
     rand_max = Maximum value of alpha if randomized
 
      """
-    def __init__(self, style_feats, vgg, decoder, alpha_min=1.0, alpha_max=1.0, probability=0.5, pixels=32):
+
+    def __init__(self, style_feats, vgg, decoder,
+                 alpha_min=1.0, alpha_max=1.0,
+                 probability=0.5, pixels=32):
         super().__init__()
         self.vgg = vgg
         self.decoder = decoder
         self.alpha_min = alpha_min
         self.alpha_max = alpha_max
         self.upsample = nn.Upsample(size=(224, 224), mode='bilinear', align_corners=False)
-        self.to_tensor = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)])
+        self.to_tensor = transforms.Compose([
+            transforms.ToImage(),
+            transforms.ToDtype(torch.float32, scale=True)
+        ])
         self.style_features = style_feats
         self.num_styles = len(style_feats)
         self.probability = probability
@@ -78,24 +86,28 @@ class NSTTransform(transforms.Transform):
 
     @torch.no_grad()
     def __call__(self, x):
-
-        single_image = True if x.ndimension() == 3 else False
-
-        batchsize = 1 if single_image else x.size(0)
-        ratio = int(math.floor(batchsize*self.probability + random.random()))
-        if ratio == 0:
-            return x
-        
+        single_image = x.ndimension() == 3
         if single_image:
-            x = x.unsqueeze(0)
-        
-        _, _, H, W = x.shape
+            x = x.unsqueeze(0)  # [C,H,W] → [1,C,H,W]
 
+        batchsize = x.size(0)
+        ratio = int(math.floor(batchsize * self.probability + random.random()))
+        if ratio == 0:
+            return x.squeeze(0) if single_image else x
+
+        # Detect grayscale
+        was_grayscale = x.shape[1] == 1
+        if was_grayscale:
+            # Repeat channel → RGB
+            x = x.repeat(1, 3, 1, 1)
+
+        _, _, H, W = x.shape
         if (H, W) != (224, 224):
             x = self.upsample(x)
-        
-        idy = torch.randperm(self.num_styles)[0:ratio]
-        idx = torch.randperm(x.size(0))[0:ratio]
+
+        # Choose random subset to stylize
+        idy = torch.randperm(self.num_styles)[:ratio]
+        idx = torch.randperm(batchsize)[:ratio]
 
         x = x.to(nst_device)
         x[idx] = self.style_transfer(self.vgg, self.decoder, x[idx], self.style_features[idy])
@@ -103,11 +115,16 @@ class NSTTransform(transforms.Transform):
 
         if (H, W) != (224, 224):
             stl_imgs = nn.Upsample(size=(H, W), mode='bilinear', align_corners=False)(stl_imgs)
-        
+
+        #normalized tensor, does not appear necessary in practice
         #stl_imgs = self.norm_style_tensor(stl_imgs)
 
+        # Convert back to grayscale if needed
+        if was_grayscale:
+            stl_imgs = F.rgb_to_grayscale(stl_imgs)
+
         if single_image:
-            stl_imgs = stl_imgs.squeeze(0)
+            stl_imgs = stl_imgs.squeeze(0)  # Back to [C,H,W]
 
         return stl_imgs
 
@@ -123,14 +140,10 @@ class NSTTransform(transforms.Transform):
 
     @torch.no_grad()
     def style_transfer(self, vgg, decoder, content, style):
-
         alpha = np.random.uniform(low=self.alpha_min, high=self.alpha_max)
-        
         content_f = vgg(content)
         style_f = style
         feat = utils.adaptive_instance_normalization(content_f, style_f)
-
         feat = feat * alpha + content_f * (1 - alpha)
-        feat = decoder(feat)
+        return decoder(feat)
 
-        return feat

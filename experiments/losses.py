@@ -9,6 +9,8 @@ def get_criterion(loss_function, lossparams):
         criterion, robust_samples = JsdCrossEntropy(**lossparams), lossparams["num_splits"] - 1
     elif loss_function == 'trades':
         criterion, robust_samples = Trades(**lossparams), 0
+    elif loss_function == 'bce':
+        criterion, robust_samples = torch.nn.BCELoss(**lossparams), 0
     else:
         criterion, robust_samples = torch.nn.CrossEntropyLoss(label_smoothing=lossparams["smoothing"]), 0
     test_criterion = torch.nn.CrossEntropyLoss()

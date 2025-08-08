@@ -15,7 +15,7 @@ concurrent_combinations = 1 #only has an effect if combine_train_corruption is T
 
 batchsize = 256
 minibatchsize = 8
-dataset = 'EuroSAT' #ImageNet #CIFAR100 #CIFAR10 #TinyImageNet #EuroSAT #PCAM #GTSRB
+dataset = 'WaferMap' #ImageNet #CIFAR100 #CIFAR10 #TinyImageNet #EuroSAT #PCAM #GTSRB #WaferMap
 generated_ratio = 0.0
 normalize = True
 validontest = True

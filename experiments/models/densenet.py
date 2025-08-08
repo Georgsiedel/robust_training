@@ -85,6 +85,8 @@ class DenseNet(ct_model.CtModel):
                 manifold_noise_factor=1, cutmix_alpha=0.0, cutmix_p=0.0, noise_minibatchsize=1,
                 concurrent_combinations=1, noise_sparsity=0.0, noise_patch_lower_scale=0.3, noise_patch_upper_scale=1.0,
                 generated_ratio=0.0, n2n_deepaugment=False, style_feats=None, **kwargs):
+        
+        x = super(DenseNet, self).forward_handle_greyscale(x)
         out = super(DenseNet, self).forward_normalize(x)
         out, mixed_targets = super(DenseNet, self).forward_noise_mixup(out, targets, robust_samples, corruptions,
                                         mixup_alpha, mixup_p, manifold, manifold_noise_factor, cutmix_alpha, cutmix_p,

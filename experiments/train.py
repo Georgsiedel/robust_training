@@ -315,8 +315,8 @@ if __name__ == '__main__':
         print('\nResuming from checkpoint after epoch', start_epoch)
     
     # Calculate steps and epochs
-    total_steps, start_steps = utils.calculate_steps(args.dataset, args.batchsize, args.epochs, start_epoch, args.warmupepochs,
-                                        args.validontest, args.validonc, args.swa['apply'], args.swa['start_factor'])
+    total_steps, start_steps = utils.calculate_steps(Dataloader.base_trainset, Dataloader.testset, args.batchsize, args.epochs, 
+                                    start_epoch, args.warmupepochs, args.validonc, args.swa['apply'], args.swa['start_factor'])
     
     with tqdm(total=total_steps, initial=start_steps) as pbar:
         

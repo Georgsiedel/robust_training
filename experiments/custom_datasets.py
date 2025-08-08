@@ -69,7 +69,10 @@ class NumpyDataset(Dataset):
 
     def __getitem__(self, idx):
         image = self.images[idx]
-        label = int(self.labels[idx])
+        if isinstance(self.labels[idx], np.ndarray): #in case of Wafermap dataset labels are multilabel np.arrays
+            label = torch.from_numpy(self.labels[idx]).float() #float needed for BCE loss
+        else:
+            label = int(self.labels[idx])
 
         if self.transform:
             image = self.transform(image)
@@ -406,6 +409,23 @@ class AugmentedDataset(torch.utils.data.Dataset):
         self.total_size = self.num_original + self.num_generated
 
         assert len(style_mask) == self.num_original + self.num_generated
+    
+    def handle_label(self, y):
+        """
+        Handle label for both single-label and multi-label cases.
+        - If y is scalar-like -> return int(y)
+        - Else -> return float tensor
+        """
+        if torch.is_tensor(y):
+            if y.ndim == 0 or (y.ndim == 1 and y.numel() == 1):
+                # Single scalar tensor
+                return int(y.item())
+            else:
+                # Multi-label or continuous tensor
+                return y.to(torch.float32)
+        else:
+            # Non-tensor case (e.g., int from dataset)
+            return int(y)
 
     def __getitem__(self, idx):
 
@@ -420,8 +440,10 @@ class AugmentedDataset(torch.utils.data.Dataset):
 
         augment = transforms.Compose([self.transforms_basic, aug])
 
+        y = self.handle_label(y)
+
         if self.robust_samples == 0:
-            return augment(x), int(y)
+            return augment(x), y
     
         elif self.robust_samples >= 1:
             if idx < self.num_original:
@@ -430,9 +452,9 @@ class AugmentedDataset(torch.utils.data.Dataset):
                 x0 = self.stylized_generated_dataset.getclean(idx - self.num_original)
 
             if self.robust_samples == 1:
-                return (self.transforms_basic(x0), augment(x)), int(y)
+                return (self.transforms_basic(x0), augment(x)), y
             elif self.robust_samples == 2:
-                return (self.transforms_basic(x0), augment(x), augment(x)), int(y)
+                return (self.transforms_basic(x0), augment(x), augment(x)), y
 
     def __len__(self):
         return self.total_size

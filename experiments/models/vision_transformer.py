@@ -288,6 +288,7 @@ class VisionTransformer(ct_model.CtModel):
                 noise_sparsity=0.0, noise_patch_lower_scale = 1.0, noise_patch_upper_scale=1.0, generated_ratio=0.0, 
                 n2n_deepaugment=False, style_feats=None, **kwargs):
         
+        x = super(VisionTransformer, self).forward_handle_greyscale(x)
         #normalize if needed and apply noise injections and mixup methods
         x = super(VisionTransformer, self).forward_normalize(x)
         x, mixed_targets = super(VisionTransformer, self).noise_mixup(x, targets, robust_samples, corruptions, mixup_alpha, 
