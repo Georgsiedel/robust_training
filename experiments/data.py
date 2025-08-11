@@ -198,22 +198,22 @@ class DataLoading():
         self.stylization_gen, self.transforms_gen_after_style, self.transforms_gen_after_nostyle = custom_transforms.get_transforms_map(train_aug_strat_gen, re, self.dataset, self.factor, grouped_stylization, self.style_feats_path)
     
     def convert_pcam_to_imagefolder(self, pcam_dataset, split_name):
-                    split_dir = os.path.join(self.data_path, f"PCAM_{split_name}_images")
-                    os.makedirs(os.path.join(split_dir, "0"), exist_ok=True)  # Class 0 folder
-                    os.makedirs(os.path.join(split_dir, "1"), exist_ok=True)  # Class 1 folder
+        split_dir = os.path.join(self.data_path, f"PCAM_{split_name}_images")
+        os.makedirs(os.path.join(split_dir, "0"), exist_ok=True)  # Class 0 folder
+        os.makedirs(os.path.join(split_dir, "1"), exist_ok=True)  # Class 1 folder
 
-                    print(f"Converting {split_name} split to ImageFolder at: {split_dir}")
-                    for idx in range(len(pcam_dataset)):
-                        img, label = pcam_dataset[idx]  # img can be PIL.Image or Tensor
+        print(f"Converting {split_name} split to ImageFolder at: {split_dir}")
+        for idx in range(len(pcam_dataset)):
+            img, label = pcam_dataset[idx]  # img can be PIL.Image or Tensor
 
-                        if isinstance(img, torch.Tensor):  # Convert tensor to PIL if needed
-                            img = transforms.ToPILImage()(img)
+            if isinstance(img, torch.Tensor):  # Convert tensor to PIL if needed
+                img = transforms.ToPILImage()(img)
 
-                        # Now img is guaranteed to be a PIL Image, so we can save directly
-                        img_path = os.path.join(split_dir, str(int(label)), f"{idx}.png")
-                        img.save(img_path)
+            # Now img is guaranteed to be a PIL Image, so we can save directly
+            img_path = os.path.join(split_dir, str(int(label)), f"{idx}.png")
+            img.save(img_path)
 
-                    return split_dir
+        return split_dir
     
     def load_base_data(self, test_only=False):
 
