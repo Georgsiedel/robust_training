@@ -509,6 +509,16 @@ class NumpyUint8ToTensor(object):
         tensor = torch.from_numpy(arr.copy()).float() / 255.0
         return tensor
 
+class ExpandGrayscaleTensorTo3Channels:
+    def __call__(self, x):
+        # Expect x to be a torch.Tensor of shape [C, H, W] or [B, C, H, W]
+        if isinstance(x, torch.Tensor):
+            if x.dim() == 3 and x.shape[0] == 1:  # Single image: [C, H, W]
+                return x.repeat(3, 1, 1)
+            elif x.dim() == 4 and x.shape[1] == 1:  # Batch: [B, C, H, W]
+                return x.repeat(1, 3, 1, 1)
+        # If input is PIL Image or others, just return as is (or convert if you want)
+        return x
 
 class ToFloat32:
     def __call__(self, x):

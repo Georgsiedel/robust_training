@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from torch.utils.data import DataLoader
-from torchmetrics.classification import MulticlassCalibrationError
+from torchmetrics.classification import MulticlassCalibrationError, BinaryCalibrationError
 from run_0 import device
 from noise import apply_noise
 from utils import plot_images
@@ -32,9 +32,19 @@ def compute_p_corruptions(testloader, model, test_corruptions, dataset):
             with torch.amp.autocast('cuda'):
                 targets_pred = model(inputs_pert)
 
-            _, predicted = targets_pred.max(1)
+            if dataset in ['WaferMap']:
+                predicted = (targets_pred > 0.5).float() 
+            else:  
+                _, predicted = targets_pred.max(1)
+
             total += targets.size(0)
-            correct += predicted.eq(targets).sum().item()
+            
+            if dataset in ['WaferMap']:
+                matches = predicted.eq(targets)  # shape: [batch_size, num_labels]
+                exact_match = matches.all(dim=1)  # shape: [batch_size], bool tensor
+                correct += exact_match.sum().item()
+            else:
+                correct += predicted.eq(targets).sum().item()
 
         acc = 100.*correct/total
         return acc
@@ -56,7 +66,7 @@ def compute_c_corruptions(dataset, testsets_c, model, batchsize, num_classes, va
             workers = workers
         testloader_c = DataLoader(corruption_testset, batch_size=batchsize, shuffle=False, pin_memory=True, num_workers=workers, 
                                   worker_init_fn=seed_worker, generator=t)
-        acc, rmsce_c = compute_c(testloader_c, model, num_classes)
+        acc, rmsce_c = compute_c(testloader_c, model, num_classes, dataset)
         accs_c.append(acc)
         rmsce_c_list.append(rmsce_c)
         if valid_run == False:
@@ -77,11 +87,14 @@ def compute_c_corruptions(dataset, testsets_c, model, batchsize, num_classes, va
 
     return accs_c
 
-def compute_c(loader_c, model, num_classes):
+def compute_c(loader_c, model, num_classes, dataset):
     with torch.no_grad():
         model.eval()
         correct, total = 0, 0
-        calibration_metric = MulticlassCalibrationError(num_classes=num_classes, n_bins=15, norm='l2')
+        if dataset in ['WaferMap']:
+            calibration_metric = BinaryCalibrationError(n_bins=15, norm='l1')
+        else:
+            calibration_metric = MulticlassCalibrationError(num_classes=num_classes, n_bins=15, norm='l1')
         all_targets = torch.empty(0)
         all_targets_pred = torch.empty((0, num_classes))
         all_targets, all_targets_pred = all_targets.to(device), all_targets_pred.to(device)
@@ -90,14 +103,26 @@ def compute_c(loader_c, model, num_classes):
             inputs, targets = inputs.to(device, dtype=torch.float), targets.to(device)
             with torch.amp.autocast('cuda'):
                 targets_pred = model(inputs)
+            
+            if dataset in ['WaferMap']:
+                predicted = (targets_pred > 0.5).float() 
+            else:  
+                _, predicted = targets_pred.max(1)
 
-            _, predicted = targets_pred.max(1)
             total += targets.size(0)
-            correct += predicted.eq(targets).sum().item()
+            if dataset in ['WaferMap']:
+                matches = predicted.eq(targets)  # shape: [batch_size, num_labels]
+                exact_match = matches.all(dim=1)  # shape: [batch_size], bool tensor
+                correct += exact_match.sum().item()
+            else:
+                correct += predicted.eq(targets).sum().item()
             all_targets = torch.cat((all_targets, targets), 0)
             all_targets_pred = torch.cat((all_targets_pred, targets_pred), 0)
 
-        rmsce_c = float(calibration_metric(all_targets_pred, all_targets).cpu())
+        if dataset in ['WaferMap']:
+            rmsce_c = float(calibration_metric(all_targets_pred.view(-1), all_targets.view(-1)).cpu())
+        else:
+            rmsce_c = float(calibration_metric(all_targets_pred, all_targets).cpu())
         acc = 100. * correct / total
 
         return acc, rmsce_c

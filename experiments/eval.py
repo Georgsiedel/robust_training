@@ -10,7 +10,7 @@ import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torch.utils.data
-from torchmetrics.classification import MulticlassCalibrationError
+from torchmetrics.classification import MulticlassCalibrationError, BinaryCalibrationError
 import argparse
 import importlib
 from run_0 import device
@@ -65,11 +65,14 @@ configname = (f'experiments.configs.config{args.experiment}')
 config = importlib.import_module(configname)
 test_corruptions = config.test_corruptions
 
-def compute_clean(testloader, model, num_classes):
+def compute_clean(testloader, model, num_classes, dataset):
     with torch.no_grad():
         correct = 0
         total = 0
-        calibration_metric = MulticlassCalibrationError(num_classes=num_classes, n_bins=15, norm='l2')
+        if dataset in ['WaferMap']:
+            calibration_metric = BinaryCalibrationError(n_bins=15, norm='l1')
+        else:
+            calibration_metric = MulticlassCalibrationError(num_classes=num_classes, n_bins=15, norm='l1')
         all_targets = torch.empty(0)
         all_targets_pred = torch.empty((0, num_classes))
         all_targets, all_targets_pred = all_targets.to(device), all_targets_pred.to(device)
@@ -79,15 +82,28 @@ def compute_clean(testloader, model, num_classes):
             inputs, targets = inputs.to(device, dtype=torch.float), targets.to(device)
             with torch.amp.autocast('cuda'):
                 targets_pred = model(inputs)
+            
+            if dataset in ['WaferMap']:
+                predicted = (targets_pred > 0.5).float()    
+            else:
+                _, predicted = targets_pred.max(1)
 
-            _, predicted = targets_pred.max(1)
             total += targets.size(0)
-            correct += predicted.eq(targets).sum().item()
+
+            if dataset in ['WaferMap']:
+                matches = predicted.eq(targets)  # shape: [batch_size, num_labels]
+                exact_match = matches.all(dim=1)  # shape: [batch_size], bool tensor
+                correct += exact_match.sum().item()
+            else:
+                correct += predicted.eq(targets).sum().item()
             all_targets = torch.cat((all_targets, targets), 0)
             all_targets_pred = torch.cat((all_targets_pred, targets_pred), 0)
 
         acc = 100.*correct/total
-        rmsce_clean = float(calibration_metric(all_targets_pred, all_targets).cpu())
+        if dataset in ['WaferMap']:
+            rmsce_clean = float(calibration_metric(all_targets_pred.view(-1), all_targets.view(-1)).cpu())
+        else:
+            rmsce_clean = float(calibration_metric(all_targets_pred, all_targets).cpu())
         print("Clean Accuracy ", acc, "%, RMSCE Calibration Error: ", rmsce_clean)
 
         return acc, rmsce_clean
@@ -133,7 +149,7 @@ if __name__ == '__main__':
         model.eval()
 
         # Clean Test Accuracy
-        acc, rmsce = compute_clean(testloader, model, Dataloader.num_classes)
+        acc, rmsce = compute_clean(testloader, model, Dataloader.num_classes, args.dataset)
         Testtracker.track_results([acc, rmsce])
 
         if args.test_on_c == True:  # C-dataset robust accuracy
@@ -152,9 +168,9 @@ if __name__ == '__main__':
             Testtracker.save_adv_distance(dist_sorted, args.adv_distance_params)
 
         if args.calculate_autoattack_robustness == True:  # adversarial accuracy calculation
-            adv_acc_aa, mean_dist_aa = eval_adversarial.compute_adv_acc(args.autoattack_params, Dataloader.testset,
+            adv_acc_aa = eval_adversarial.compute_adv_acc(args.autoattack_params, Dataloader.testset,
                                                                         model, 0, args.batchsize)
-            Testtracker.track_results([adv_acc_aa, mean_dist_aa])
+            Testtracker.track_results([adv_acc_aa])
 
         # Robust Accuracy on p-norm noise - either combined or separate noise types
         accs = eval_corruptions.select_p_corruptions(testloader, model, test_corruptions, args.dataset, args.combine_test_corruptions)

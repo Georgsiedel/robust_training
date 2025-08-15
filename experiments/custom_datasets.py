@@ -56,6 +56,13 @@ class NumpyDataset(Dataset):
         self.labels = labels
         self.transform = transform
 
+        self.labels = []
+        for lbl in labels:
+            if isinstance(lbl, np.ndarray):
+                self.labels.append(torch.from_numpy(lbl).float())
+            else:
+                self.labels.append(int(lbl))
+
     def __len__(self):
         return len(self.labels)
     
@@ -69,15 +76,11 @@ class NumpyDataset(Dataset):
 
     def __getitem__(self, idx):
         image = self.images[idx]
-        if isinstance(self.labels[idx], np.ndarray): #in case of Wafermap dataset labels are multilabel np.arrays
-            label = torch.from_numpy(self.labels[idx]).float() #float needed for BCE loss
-        else:
-            label = int(self.labels[idx])
 
         if self.transform:
             image = self.transform(image)
 
-        return image, label
+        return image, self.labels[idx]
     
 class ListDataset(Dataset):
     def __init__(self, data):

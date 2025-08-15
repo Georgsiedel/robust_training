@@ -9,7 +9,7 @@ import torchvision.transforms as transforms
 import torchvision.transforms.v2 as transforms_v2
 from sklearn.model_selection import train_test_split
 import torchvision
-from torch.utils.data import Subset, ConcatDataset, RandomSampler, BatchSampler, DataLoader
+from torch.utils.data import Subset, ConcatDataset, RandomSampler, BatchSampler, DataLoader, TensorDataset
 import numpy as np
 from PIL import Image
 from torchvision.datasets import ImageFolder
@@ -71,43 +71,41 @@ def extract_labels(dataset):
         # worst case: iterate—but still O(N), same as splitting
         return [dataset[i][1] for i in range(len(dataset))]
 
-def extract_classes(dataset, labels=None):
+def extract_num_classes(dataset, labels=None):
     """
-    Return the class‑names in order, plus a mapping label→name.
+    Return the number of classes in the dataset.
+    Supports scalar or multilabel (multi-hot vector) labels.
     """
-    # 1) if the dataset actually has names, use them
+    # Use dataset info if available
     if hasattr(dataset, 'classes'):
-        classes = list(dataset.classes)
-    elif hasattr(dataset, 'class_to_idx'):
-        # invert the dict, sorted by the idx value
-        classes = [None] * len(dataset.class_to_idx)
-        for name, idx in dataset.class_to_idx.items():
-            classes[idx] = name
-    else:
-        # 2) Otherwise we must derive from labels
-        if labels is None:
-            labels = extract_labels(dataset)
+        return len(dataset.classes)
+    if hasattr(dataset, 'class_to_idx'):
+        return len(dataset.class_to_idx)
+    
+    # Otherwise get labels if not provided
+    if labels is None:
+        labels = extract_labels(dataset)
 
-        # 2a) If labels are 1D numpy arrays (one-hot / multi-hot):
-        if (
-            isinstance(labels, (list, tuple, np.ndarray))
-            and len(labels) > 0
-            and isinstance(labels[0], np.ndarray)
-            and labels[0].ndim == 1
-        ):
-            num_classes = labels[0].shape[0]
-            # here we just name them "0","1",... or you could use custom names
-            classes = [str(i) for i in range(num_classes)]
+    # If labels are multilabel vectors (list of arrays/tensors)
+    if (
+        isinstance(labels, (list, tuple))
+        and len(labels) > 0
+        and (
+            (hasattr(labels[0], 'ndim') and labels[0].ndim == 1)  # np.ndarray or tensor
+            or (isinstance(labels[0], (list, tuple)) and all(isinstance(x, (int,float)) for x in labels[0]))  # list/tuple of numbers
+        )
+    ):
+        return len(labels[0])  # number of classes from length of vector
 
+    # Otherwise treat as scalar labels, count unique
+    unique_labels = set()
+    for lbl in labels:
+        # If tensor or numpy scalar convert to Python scalar
+        if hasattr(lbl, 'item'):
+            unique_labels.add(lbl.item())
         else:
-            # 2b) fallback for scalar labels
-            unique = sorted(set(labels))
-            classes = [str(l) for l in unique]
-
-    # build the lookup
-    name_map = {i: classes[i] for i in range(len(classes))}
-    return classes, name_map
-
+            unique_labels.add(lbl)
+    return len(unique_labels)
 
 class DataLoading():
     def __init__(self, dataset, validontest=True, epochs=200, generated_ratio=0.0, 
@@ -146,7 +144,7 @@ class DataLoading():
         t = transforms.ToTensor()
         c32 = transforms.RandomCrop(32, padding=4)
         c64 = transforms.RandomCrop(64, padding=8)
-        c64_WM = transforms.RandomCrop(64, padding=12)
+        c64_WM = transforms.RandomCrop(64, padding=6)
         c96 = transforms.RandomCrop(96, padding=12)
         c224 = transforms.RandomCrop(224, padding=28)
         flip = transforms.RandomHorizontalFlip()
@@ -167,11 +165,13 @@ class DataLoading():
             self.transforms_preprocess = transforms.Compose([t, r32])
         elif self.dataset == 'WaferMap':
             #https://github.com/Junliangwangdhu/WaferMap/tree/master
+            #preprocessing once upon loading as below, not on the fly (small set fits in memory, lots of operations)
             self.transforms_preprocess = transforms.Compose([
-                t,
-                custom_transforms.ToFloat32(),
-                custom_transforms.DivideBy2(),
-                c64_WM
+                #t,
+                #custom_transforms.ToFloat32(),
+                #custom_transforms.DivideBy2(),
+                #custom_transforms.ExpandGrayscaleTensorTo3Channels(), #directly converts to 3 channels
+                #c64_WM
             ])
         else:
             self.transforms_preprocess = transforms.Compose([t])
@@ -189,7 +189,7 @@ class DataLoading():
         elif self.dataset in ['PCAM']:
             self.transforms_basic = transforms.Compose([flip, flip_v, c96])
         elif self.dataset in ['WaferMap']:
-            self.transforms_basic = transforms.Compose([flip, flip_v])
+            self.transforms_basic = transforms.Compose([c64_WM, flip, flip_v])
 
         if self.resize == True and self.dataset != 'ImageNet':
             self.transforms_basic = transforms.Compose([flip, c224])
@@ -293,8 +293,7 @@ class DataLoading():
                     self.base_trainset = Subset(full_set, train_indices)
                 self.testset = SubsetWithTransform(Subset(full_set, val_indices), transforms.Compose([self.transforms_preprocess]))
                 
-                classes, _ = extract_classes(self.testset, labels=all_labels)
-                self.num_classes = len(classes)       
+                self.num_classes = extract_num_classes(self.testset, labels=all_labels)
                 return    
                         
             elif self.dataset == 'WaferMap':
@@ -310,18 +309,28 @@ class DataLoading():
                 test_size=0.2,
                 random_state=0)
 
+                x_transform = transforms.Compose([transforms.ToTensor(),
+                                    custom_transforms.ToFloat32(),
+                                    custom_transforms.DivideBy2(),
+                                    custom_transforms.ExpandGrayscaleTensorTo3Channels(),
+                                    transforms.RandomCrop(64, padding=6)])
+
+                x_train = torch.stack([x_transform(img) for img in x_train])
+                x_test = torch.stack([x_transform(img) for img in x_test])
+                y_train = torch.from_numpy(y_train).float()
+                y_test = torch.from_numpy(y_test).float()
+
                 if test_only:
                     self.base_trainset = None
                 else:
-                    self.base_trainset = NumpyDataset(x_train, y_train)
-                self.testset = NumpyDataset(x_test, y_test, transform=self.transforms_preprocess)
+                    self.base_trainset = TensorDataset(x_train, y_train)
+                self.testset = TensorDataset(x_test, y_test) #transforms already done
             
             else:
                 print('Dataset not loadable')
 
             all_labels = extract_labels(self.testset)
-            classes, _ = extract_classes(self.testset, labels=all_labels)
-            self.num_classes = len(classes)
+            self.num_classes = extract_num_classes(self.testset, labels=all_labels)
 
         else:
             if self.dataset in ['ImageNet', 'TinyImageNet']:
@@ -392,8 +401,7 @@ class DataLoading():
             else:
                 self.testset = SubsetWithTransform(Subset(base_trainset, val_indices), transforms.Compose([self.transforms_preprocess]))
             
-            classes, _ = extract_classes(self.testset, labels=all_labels)
-            self.num_classes = len(classes)
+            self.num_classes = extract_num_classes(self.testset, labels=all_labels)
     
     def load_style_dataloader(self, style_dir, batch_size):
         style_dataset = StyleDataset(style_dir, dataset_type=self.dataset)

@@ -23,6 +23,14 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Upgrade pip in the virtual environment
 RUN pip install --upgrade pip
 
+# Accept UID/GID from build args with defaults
+ARG USER_ID=1000
+ARG GROUP_ID=1000
+
+# Create group and user matching host UID/GID
+RUN groupadd -g ${GROUP_ID} appgroup && \
+    useradd -m -u ${USER_ID} -g appgroup appuser
+
 # Set the working directory inside the container
 WORKDIR /workspace
 
@@ -34,6 +42,9 @@ RUN pip install -r /workspace/requirements.txt
 
 # Copy your repository code into the container
 COPY . /workspace/
+
+# Switch to that user
+USER appuser
 
 # Command to run your app
 CMD ["bash"]

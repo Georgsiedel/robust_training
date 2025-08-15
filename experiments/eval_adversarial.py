@@ -5,7 +5,6 @@ from torch.utils.data import DataLoader
 from autoattack import AutoAttack
 from art.estimators.classification.pytorch import PyTorchClassifier
 from art.attacks.evasion import (ProjectedGradientDescentPyTorch,
-                                 AutoAttack,
                                  CarliniL2Method,
                                  ElasticNet,
                                  HopSkipJump)
@@ -269,7 +268,7 @@ def compute_adv_distance(testset, workers, model, adv_distance_params):
 
     return adv_acc*100, distances, mean_distances
 
-def compute_adv_acc(autoattack_params, testset, model, workers, batchsize=10):
+def compute_adv_acc(autoattack_params, testset, model, workers, batchsize=50):
     print(f"{autoattack_params['norm']}-norm Adversarial Accuracy calculation using AutoAttack attack "
           f"with epsilon={autoattack_params['epsilon']}")
     truncated_testset, _ = torch.utils.data.random_split(testset, [autoattack_params["setsize"],
@@ -278,7 +277,6 @@ def compute_adv_acc(autoattack_params, testset, model, workers, batchsize=10):
                                        pin_memory=True, num_workers=workers)
     adversary = AutoAttack(model, norm=autoattack_params['norm'], eps=autoattack_params['epsilon'], version='standard')
     correct, total = 0, 0
-    distance_list = []
     if autoattack_params["norm"] == 'Linf':
         autoattack_params["norm"] = np.inf
     else:
@@ -286,12 +284,7 @@ def compute_adv_acc(autoattack_params, testset, model, workers, batchsize=10):
     for batch_id, (inputs, targets) in enumerate(truncated_testloader):
         adv_inputs, adv_predicted = adversary.run_standard_evaluation(inputs, targets, bs=batchsize, return_labels=True)
 
-        for i, (input) in enumerate(inputs):
-            distance = torch.linalg.vector_norm((input - adv_inputs[i]), ord=autoattack_params["norm"])
-            distance_list.append(distance)
-
-    mean_aa_dist = np.asarray(torch.tensor(distance_list).cpu()).mean()
     correct += (adv_predicted == targets).sum().item()
     total += targets.size(0)
     adv_acc = correct / total
-    return adv_acc, mean_aa_dist
+    return adv_acc

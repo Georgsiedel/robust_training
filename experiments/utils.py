@@ -469,7 +469,7 @@ class TestTracking:
             self.adv_count = len(self.adv_distance_params["norm"]) * (2+len(self.adv_distance_params["clever_samples"])) + 1
             self.test_count += self.adv_count
         if calculate_autoattack_robustness:
-            self.test_count += 2
+            self.test_count += 1
 
         self.all_test_metrics = np.empty([self.test_count, self.runs])
 
@@ -516,8 +516,7 @@ class TestTracking:
                                                         [f'{n}-norm-Mean_CLEVER-{b}-samples'], axis=0)
         if self.calculate_autoattack_robustness == True:
             test_metrics_string = np.append(test_metrics_string,
-                                                ['Adversarial_accuracy_autoattack', 'Mean_adv_distance_autoattack)'],
-                                                axis=0)
+                                                ['Adversarial_accuracy_autoattack'])
         if self.combine_test_corruptions == True:
             test_metrics_string = np.append(test_metrics_string, ['Combined_Noise'])
         else:

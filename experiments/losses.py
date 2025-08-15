@@ -78,7 +78,7 @@ class Trades(nn.Module):
 
     def __call__(self, x_natural, y):
         # define KL-loss
-        criterion_kl = nn.KLDivLoss(size_average=False)
+        criterion_kl = nn.KLDivLoss(reduction='sum')
 
         self.model.eval()
         batch_size = len(x_natural)
@@ -179,7 +179,7 @@ def trades_loss(model,
                 beta=1.0,
                 distance='l_inf'):
     # define KL-loss
-    criterion_kl = nn.KLDivLoss(size_average=False)
+    criterion_kl = nn.KLDivLoss(reduction='sum')
     model.eval()
     batch_size = len(x_natural)
     # generate adversarial example
@@ -231,9 +231,9 @@ def trades_loss(model,
     # zero gradient
     optimizer.zero_grad()
     # calculate robust loss
-    logits = model(x_natural)
+    logits = model(x_natural)[0] #changed for ct_model outputs a tuple with mixed_targets
     loss_natural = F.cross_entropy(logits, y)
-    loss_robust = (1.0 / batch_size) * criterion_kl(F.log_softmax(model(x_adv), dim=1),
-                                                    F.softmax(model(x_natural), dim=1))
+    loss_robust = (1.0 / batch_size) * criterion_kl(F.log_softmax(model(x_adv)[0], dim=1),
+                                                    F.softmax(model(x_natural)[0], dim=1))
     loss = loss_natural + beta * loss_robust
     return loss

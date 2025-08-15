@@ -813,34 +813,6 @@ def bilinear_interpolation(image, point):
     out = al * (1.0 - point[0] + l) + ar * (1.0 - r + point[0])
     return out
 
-
-def new_bilinear_interpolation(image, point):
-    l = int(np.floor(point[0]))
-    u = int(np.floor(point[1]))
-    r, d = l + 1, u + 1
-
-    channels = image.shape[2]  # Assume image shape is (H, W, C)
-
-    def safe_pixel(y, x):
-        if 0 <= y < image.shape[0] and 0 <= x < image.shape[1]:
-            return image[y, x, :]
-        else:
-            return np.zeros(channels, dtype=image.dtype)
-
-    lu = safe_pixel(l, u)
-    ld = safe_pixel(l, d)
-    ru = safe_pixel(r, u)
-    rd = safe_pixel(r, d)
-
-    wy = point[0] - l
-    wx = point[1] - u
-
-    al = lu * (1 - wx) + ld * wx
-    ar = ru * (1 - wx) + rd * wx
-    out = al * (1 - wy) + ar * wy
-
-    return out
-
 def int_parameter(level, maxval):
   return int(level * maxval / 10)
 
@@ -1303,17 +1275,8 @@ class CheckerBoardCutOut(Transform):
             ny = (-np.sin(angle) * point[0] + np.cos(angle) * point[1]) / scales[1]
             return (int(nx % 2) != int(ny % 2)) or not grid[int(nx),int(ny)]
 
-        channels = image.shape[2] if image.ndim == 3 else 1
-        default_value = np.array([128] * channels, dtype=np.uint8)
-
-        out = np.array([
-            [image[y, x, :] if mask_kernel([y, x], scales, angle, grid) else default_value
-            for x in range(image.shape[1])]
-            for y in range(image.shape[0])
-        ], dtype=np.uint8)
-
-        #out = np.array([[image[y,x,:] if mask_kernel([y,x], scales, angle, grid) else np.array([128,128,128])\
-        #        for x in range(self.im_size)] for y in range(self.im_size)])
+        out = np.array([[image[y,x,:] if mask_kernel([y,x], scales, angle, grid) else np.array([128,128,128])\
+                for x in range(self.im_size)] for y in range(self.im_size)])
         return np.clip(out, 0, 255).astype(np.uint8)
 
 
@@ -1388,11 +1351,12 @@ class BlueNoiseSample(Transform):
         fourier_space_noise = np.roll(fourier_space_noise, self.im_size//2, axis=0)
         fourier_space_noise = np.roll(fourier_space_noise, self.im_size//2, axis=1)
 
+
         noise = np.real(ifft2(fourier_space_noise))
         noise = noise / np.std(noise)
         mask = noise > threshold
-
         out = image * mask.reshape(self.im_size, self.im_size, 1)
+
 
         return np.clip(out, 0, 255).astype(np.uint8)
 
@@ -1465,7 +1429,7 @@ class CausticRefraction(Transform):
             refract_vector = refract(np.array([0.0, 0.0, 1.0]), lens_normal, eta) * lens_scale
             refract_vector = np.round(refract_vector, 3)
 
-            out_pixel = new_bilinear_interpolation(image, point+refract_vector[0:2])
+            out_pixel = bilinear_interpolation(image, point+refract_vector[0:2])
             out_pixel += (north_luma - south_luma) * lighting_amount
             out_pixel += (east_luma - west_luma) * lighting_amount
 
@@ -1524,7 +1488,7 @@ class PinchAndTwirl(Transform):
                 l, r = i * grid_size, (i+1) * grid_size
                 u, d = j * grid_size, (j+1) * grid_size
                 center = np.array([u+radius, l+radius])
-                out[u:d,l:r,:] = np.array([[new_bilinear_interpolation(out, warp_kernel(np.array([y,x]), center, radius, amount, angles[i,j]))\
+                out[u:d,l:r,:] = np.array([[bilinear_interpolation(out, warp_kernel(np.array([y,x]), center, radius, amount, angles[i,j]))\
                         for x in np.arange(l,r)] for y in np.arange(u,d)])
 
         return np.clip(out, 0, 255).astype(np.uint8)
@@ -1546,26 +1510,8 @@ class Ripple(Transform):
         def warp_kernel(point, wavelengths, phases, amplitudes):
             return point + amplitudes * np.sin(2 * np.pi * point / wavelengths + phases)
 
-        #original code
-        #image = np.array([[bilinear_interpolation(image, warp_kernel(np.array([y,x]), wavelengths, phases, amplitudes))\
-        #        for x in range(self.im_size)] for y in range(self.im_size)])
-
-        warped = []
-        for y in range(self.im_size):
-            row = []
-            for x in range(self.im_size):
-                val = new_bilinear_interpolation(image, warp_kernel(np.array([y, x]), wavelengths, phases, amplitudes))
-
-                # Force val to array with consistent shape:
-                if np.isscalar(val):
-                    val = np.array([val], dtype=np.float32)  # grayscale: shape (1,)
-                else:
-                    val = np.array(val, dtype=np.float32)    # RGB: shape (3,)
-                row.append(val)
-            warped.append(row)
-
-        # Stack into numpy array
-        image = np.stack([np.stack(row, axis=0) for row in warped], axis=0)
+        image = np.array([[bilinear_interpolation(image, warp_kernel(np.array([y,x]), wavelengths, phases, amplitudes))\
+                for x in range(self.im_size)] for y in range(self.im_size)])
 
         return np.clip(image, 0, 255).astype(np.uint8) 
 
