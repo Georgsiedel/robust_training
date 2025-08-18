@@ -26,7 +26,7 @@ if __name__ == '__main__':
 
         for run in range(runs):
 
-            resume = True if experiment in [593] and run in [0] else False
+            resume = True if experiment in [] and run in [0] else False
 
             print("Training run #",run)
             cmd0 = f"python experiments/train.py --resume={resume} --run={run} --experiment={experiment} --epochs=" \
