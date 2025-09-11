@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  python-gpu-container-all-gpus:
+    build:
+      context: . # Path to the Dockerfile (current directory)
+      dockerfile: Dockerfile
+      args:
+        USER_ID: ${UID:-1000}
+        GROUP_ID: ${GID:-1000}
+    user: "${UID:-1000}:${GID:-1000}"
+    shm_size: '128g'
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "0,1,2,3,4,5,6,7"  # All GPUs
+      CUDA_HOME: "/usr/local/cuda"
+      LD_LIBRARY_PATH: "/usr/local/lib:/usr/lib:/lib:$LD_LIBRARY_PATH"
+    volumes:
+      - /data/siedel/datasets:/data
+      - /home/siedel/data/ImageNet:/data/ImageNet
+      - /home/siedel/data/TinyImageNet:/data/TinyImageNet
+      - /home/siedel/trained_models:/trained_models
+      - ./results:/workspace/results
+      - ./experiments/configs:/workspace/experiments/configs
+      - ./run_0.py:/workspace/run_0.py
+      - ./run_1.py:/workspace/run_1.py
+      - ./run_2.py:/workspace/run_2.py
+      - ./run_3.py:/workspace/run_3.py
+      - ./run_pbt.py:/workspace/run_pbt.py
+      - ./experiments/pbt_train.py:/workspace/experiments/pbt_train.py   
+    #command: python run_exp.py  # Run the main script for this container
+    tty: true

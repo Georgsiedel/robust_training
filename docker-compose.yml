@@ -26,7 +26,6 @@ services:
       - ./run_1.py:/workspace/run_1.py
       - ./run_2.py:/workspace/run_2.py
       - ./run_3.py:/workspace/run_3.py
-    command: ["taskset", "-c", "64-71", "/bin/bash"]
     #command: python run_exp.py  # Run the main script for this container
     tty: true
 
@@ -35,7 +34,6 @@ services:
       service: python-gpu-container-gpu0
     environment:
       NVIDIA_VISIBLE_DEVICES: "1"  # Restrict to GPU 1
-    command: ["taskset", "-c", "72-79", "/bin/bash"]
     #command: python run_exp_1.py  # Run a different script for this container
     tty: true
 
@@ -44,7 +42,6 @@ services:
       service: python-gpu-container-gpu0
     environment:
       NVIDIA_VISIBLE_DEVICES: "2"  # Restrict to GPU 2
-    command: ["taskset", "-c", "80-87", "/bin/bash"]
     #command: python run_exp_2.py  # Run a different script for this container
     tty: true
 
@@ -53,7 +50,6 @@ services:
       service: python-gpu-container-gpu0
     environment:
       NVIDIA_VISIBLE_DEVICES: "3"  # Restrict to GPU 3
-    command: ["taskset", "-c", "88-95", "/bin/bash"] 
     #command: python run_exp_3.py  # Run a different script for this container
     tty: true
 
@@ -62,7 +58,6 @@ services:
       service: python-gpu-container-gpu0
     environment:
       NVIDIA_VISIBLE_DEVICES: "4"  # Restrict to GPU 4
-    command: ["taskset", "-c", "96-103", "/bin/bash"] 
     #command: python run_exp_4.py  # Run a different script for this container
     tty: true
 
@@ -71,7 +66,6 @@ services:
       service: python-gpu-container-gpu0
     environment:
       NVIDIA_VISIBLE_DEVICES: "5"  # Restrict to GPU 3
-    command: ["taskset", "-c", "104-111", "/bin/bash"] 
     #command: python run_exp_5.py  # Run a different script for this container
     tty: true
 
@@ -80,7 +74,6 @@ services:
       service: python-gpu-container-gpu0
     environment:
       NVIDIA_VISIBLE_DEVICES: "6"  # Restrict to GPU 3
-    command: ["taskset", "-c", "112-119", "/bin/bash"] 
     #command: python run_exp_6.py  # Run a different script for this container
     tty: true
 
@@ -89,6 +82,5 @@ services:
       service: python-gpu-container-gpu0
     environment:
       NVIDIA_VISIBLE_DEVICES: "7"  # Restrict to GPU 3
-    command: ["taskset", "-c", "120-127", "/bin/bash"] 
     #command: python run_exp_7.py  # Run a different script for this container
     tty: true

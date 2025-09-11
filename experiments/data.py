@@ -108,10 +108,9 @@ def extract_num_classes(dataset, labels=None):
     return len(unique_labels)
 
 class DataLoading():
-    def __init__(self, dataset, validontest=True, epochs=200, generated_ratio=0.0, 
+    def __init__(self, dataset, validontest=True, epochs=200, 
                  resize = False, run=0, number_workers=0, kaggle=False):
         self.dataset = dataset
-        self.generated_ratio = generated_ratio
         self.resize = resize
         self.run = run
         self.epochs = epochs
@@ -131,15 +130,35 @@ class DataLoading():
         
         file_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "paths.json")
         with open(file_path, "r") as f:
-            self.path = json.load(f)
-            suffix = '_kaggle' if self.kaggle else ''
+            paths = json.load(f)
 
-            self.data_path = self.path.get(f"data{suffix}")
-            self.c_labels_path = self.path.get(f"c_labels{suffix}")
-            self.trained_models_path = self.path.get(f"trained_models{suffix}")
-            self.style_feats_path = self.path.get(f"style_feats{suffix}")
+        suffix = "_kaggle" if os.environ.get("KAGGLE_KERNEL_RUN_TYPE") else ""  # use env to detect Kaggle
 
-    def create_transforms(self, train_aug_strat_orig, train_aug_strat_gen, RandomEraseProbability=0.0, grouped_stylization=False):
+        def resolve_path(key, suffix=""):
+            # First try the suffixed path
+            p = paths.get(f"{key}{suffix}")
+            if not p:
+                p = paths[key]
+            
+            # Make absolute
+            if not os.path.isabs(p):
+                # Relative to the repository root
+                repo_root = os.path.dirname(os.path.dirname(__file__))
+                p = os.path.abspath(os.path.join(repo_root, p))
+            return p
+
+        self.data_path = resolve_path("data", suffix)
+        self.c_labels_path = resolve_path("c_labels", suffix)
+        self.trained_models_path = resolve_path("trained_models", suffix)
+        self.style_feats_path = resolve_path("style_feats", suffix)
+        self.write_data_path = resolve_path("write_data", suffix)
+
+    def create_transforms(self, train_aug_strat_orig, train_aug_strat_gen, RandomEraseProbability=0.0, 
+                          grouped_stylization=False):
+        self.train_aug_strat_orig = train_aug_strat_orig
+        self.train_aug_strat_gen = train_aug_strat_gen
+        self.grouped_stylization = grouped_stylization
+        self.RandomEraseProbability = RandomEraseProbability
         # list of all data transformations used
         t = transforms.ToTensor()
         c32 = transforms.RandomCrop(32, padding=4)
@@ -154,7 +173,7 @@ class DataLoading():
         r256 = transforms.Resize(256, antialias=True)
         cc224 = transforms.CenterCrop(224)
         rrc224 = transforms.RandomResizedCrop(224, antialias=True)
-        re = transforms.RandomErasing(p=RandomEraseProbability, scale=(0.02, 0.4)) #, value='random' --> normally distributed and out of bounds 0-1
+        re = transforms.RandomErasing(p=self.RandomEraseProbability, scale=(0.02, 0.4)) #, value='random' --> normally distributed and out of bounds 0-1
 
         # transformations of validation/test set and necessary transformations for training
         # always done (even for clean images while training, when using robust loss)
@@ -196,6 +215,25 @@ class DataLoading():
 
         self.stylization_orig, self.transforms_orig_after_style, self.transforms_orig_after_nostyle = custom_transforms.get_transforms_map(train_aug_strat_orig, re, self.dataset, self.factor, grouped_stylization, self.style_feats_path)
         self.stylization_gen, self.transforms_gen_after_style, self.transforms_gen_after_nostyle = custom_transforms.get_transforms_map(train_aug_strat_gen, re, self.dataset, self.factor, grouped_stylization, self.style_feats_path)
+
+    def update_transforms(self, stylize_prob_orig=None, stylize_prob_syn=None, alpha_min_orig=None, 
+                          alpha_min_syn=None, RandomEraseProbability=None):
+        
+        if RandomEraseProbability is None:
+            RandomEraseProbability = self.RandomEraseProbability
+        re = transforms.RandomErasing(p=RandomEraseProbability, scale=(0.02, 0.4)) #, value='random' --> normally distributed and out of bounds 0-1
+
+        self.stylization_orig, self.transforms_orig_after_style, self.transforms_orig_after_nostyle = custom_transforms.get_transforms_map(self.train_aug_strat_orig, re, self.dataset, self.factor, self.grouped_stylization, self.style_feats_path)
+        self.stylization_gen, self.transforms_gen_after_style, self.transforms_gen_after_nostyle = custom_transforms.get_transforms_map(self.train_aug_strat_gen, re, self.dataset, self.factor, self.grouped_stylization, self.style_feats_path)
+
+        if stylize_prob_orig is not None:
+            self.stylization_orig.stylized_ratio = stylize_prob_orig
+        if stylize_prob_syn is not None:
+            self.stylization_gen.stylized_ratio = stylize_prob_syn
+        if alpha_min_orig is not None:
+            self.stylization_orig.transform_style.alpha_min = alpha_min_orig
+        if alpha_min_syn is not None:
+            self.stylization_gen.transform_style.alpha_min = alpha_min_syn
     
     def convert_pcam_to_imagefolder(self, pcam_dataset, split_name):
         split_dir = os.path.join(self.data_path, f"PCAM_{split_name}_images")
@@ -409,12 +447,13 @@ class DataLoading():
         return style_loader
 
         
-    def load_augmented_traindata(self, target_size, epoch=0, robust_samples=0, grouped_stylization=False):
+    def load_augmented_traindata(self, target_size, generated_ratio, epoch=0, robust_samples=0, grouped_stylization=False):
         self.robust_samples = robust_samples
         self.target_size = target_size
         try:
             self.generated_dataset = np.load(os.path.abspath(f'{self.data_path}/{self.dataset}-add-1m-dm.npz'),
-                                    mmap_mode='r') if self.generated_ratio > 0.0 else None
+                                    mmap_mode='r') if generated_ratio > 0.0 else None
+            self.generated_ratio = generated_ratio
         except:
             print(f'No synthetic data found for this dataset in {self.data_path}/{self.dataset}-add-1m-dm.npz')
             self.generated_ratio = 0.0
@@ -496,28 +535,38 @@ class DataLoading():
         
         # If valid_run, precompute the transformed outputs and wrap them as a standard dataset. (we do not want to tranform every epoch)
         if valid_run:
-            if corruption in ['caustic_refraction', 'sparkles']: #compute heavier corruptions
-                r = torch.Generator()
-                r.manual_seed(0) #ensure that the same testset is always used when generating random corruptions
 
-                precompute_loader = DataLoader(
-                    random_corrupted_testset,
-                    batch_size=1,
-                    shuffle=False,
-                    pin_memory=True,
-                    num_workers=0,#because of some pickle error with multiprocessing
-                    worker_init_fn=seed_worker,
-                    generator=r
-                )
-                
-                precomputed_samples = [(sample[0], label[0]) for sample, label in precompute_loader]
-                # Wrap the precomputed samples in a dataset so that further processing sees a standard Dataset object.
-                random_corrupted_testset = ListDataset(precomputed_samples)
+            batch_size = min(100, subsetsize)
+
+            r = torch.Generator()
+            r.manual_seed(0) #ensure that the same testset is always used when generating random corruptions
+
+            precompute_loader = DataLoader(
+                random_corrupted_testset,
+                batch_size=batch_size,
+                shuffle=False,
+                pin_memory=True,
+                num_workers=0, #because of some pickle error with multiprocessing
+                worker_init_fn=seed_worker,
+                generator=r,
+                drop_last=False
+            )
             
-            else:
-                precomputed_samples = [sample for sample in random_corrupted_testset]
-                #Wrap the precomputed samples in a dataset so that further processing sees a standard Dataset object.
-                random_corrupted_testset = ListDataset(precomputed_samples)
+            # Collect all batches into tensors (no double for loop needed!)
+            all_samples = []
+            all_labels = []
+            
+            for batch_samples, batch_labels in precompute_loader:
+                all_samples.append(batch_samples)
+                all_labels.append(batch_labels)
+            
+            # Concatenate all batches into single tensors
+            all_samples_tensor = torch.cat(all_samples, dim=0)
+            all_labels_tensor = torch.cat(all_labels, dim=0)
+            
+            # Use TensorDataset - much more efficient than ListDataset
+            random_corrupted_testset = TensorDataset(all_samples_tensor, all_labels_tensor)
+
                                 
         c_datasets.append(random_corrupted_testset)
 
@@ -527,7 +576,7 @@ class DataLoading():
 
         c_datasets = []
         #c-corruption benchmark: https://github.com/hendrycks/robustness
-        corruptions_c = np.asarray(np.loadtxt(os.path.abspath(f'{self.c_labels_path}/c-labels.txt'), dtype=list))
+        corruptions_c = np.asarray(np.loadtxt(os.path.join(self.c_labels_path, "c-labels.txt"), dtype=list))
         
         np.random.seed(self.run) # to make subsamples reproducible
         torch.manual_seed(self.run)
@@ -614,19 +663,14 @@ class DataLoading():
                 self.CustomSampler = BalancedRatioSampler(self.trainset, generated_ratio=self.generated_ratio,
                                                     batch_size=batchsize)
             else:
-                self.CustomSampler = BatchSampler(RandomSampler(self.trainset), batch_size=batchsize, drop_last=False)
-
-            self.trainloader = DataLoader(self.trainset, pin_memory=True, batch_sampler=self.CustomSampler,
-                                        num_workers=self.number_workers, worker_init_fn=seed_worker, 
-                                            generator=g, persistent_workers=False)
-            
+                self.CustomSampler = BatchSampler(RandomSampler(self.trainset), batch_size=batchsize, drop_last=False)            
         else:
             self.CustomSampler = ReproducibleBalancedRatioSampler(self.trainset, generated_ratio=self.generated_ratio,
                                                  batch_size=batchsize, epoch=self.epoch)
 
-            self.trainloader = DataLoader(self.trainset, pin_memory=True, batch_sampler=self.CustomSampler,
-                                      num_workers=self.number_workers, worker_init_fn=seed_worker, 
-                                        generator=g, persistent_workers=False)
+        self.trainloader = DataLoader(self.trainset, pin_memory=True, batch_sampler=self.CustomSampler,
+                                    num_workers=self.number_workers, worker_init_fn=seed_worker, 
+                                    generator=g, persistent_workers=False)
         
         val_workers = self.number_workers if self.dataset=='ImageNet' else 0
         self.testloader = DataLoader(self.testset, batch_size=batchsize, pin_memory=True, num_workers=val_workers)
@@ -634,19 +678,27 @@ class DataLoading():
         return self.trainloader, self.testloader
     
 
-    def update_set(self, epoch, start_epoch, grouped_stylization=False):
+    def update_set(self, epoch, start_epoch, grouped_stylization=False, config=None):
+        
+        if config:
+            self.update_transforms(stylize_prob_orig=config.get("stylize_prob_real", None), 
+                            stylize_prob_syn=config.get("stylize_prob_synth", None), 
+                            alpha_min_orig=config.get("alpha_min_real", None), 
+                            alpha_min_syn=config.get("alpha_min_synth", None), 
+                            RandomEraseProbability=config.get('RandomEraseProbability', None))
 
         if grouped_stylization == False:
-            if (self.generated_ratio != 0.0 or self.stylization_gen is not None or self.stylization_orig is not None) and epoch != 0 and epoch != start_epoch:
-                            
+            if ((self.generated_ratio != 0.0 or self.stylization_gen is not None or self.stylization_orig is not None) and epoch != 0 and epoch != start_epoch) or config is not None:
+                # This should be updated when config gives new transforms parameters, when there is generated data or when there is stylization
                 del self.trainset
 
-                self.load_augmented_traindata(self.target_size, epoch=epoch, robust_samples=self.robust_samples, grouped_stylization=False)
+                self.load_augmented_traindata(self.target_size, generated_ratio=config["synth_ratio"], epoch=epoch, robust_samples=self.robust_samples, grouped_stylization=False)
         else:    
-            if (self.generated_ratio != 0.0) and epoch != 0 and epoch != start_epoch:
-                    self.load_augmented_traindata(self.target_size, epoch=epoch, robust_samples=self.robust_samples, grouped_stylization=True)
+            if ((self.generated_ratio != 0.0) and epoch != 0 and epoch != start_epoch) or config is not None:
+                # This should be updated when config gives new transforms parameters, when there is generated data or when there is stylization
+                self.load_augmented_traindata(self.target_size, generated_ratio=config["synth_ratio"], epoch=epoch, robust_samples=self.robust_samples, grouped_stylization=True)
             elif (self.stylization_gen is not None or self.stylization_orig is not None) and epoch != 0 and epoch != start_epoch:
-                    self.trainset.set_epoch(epoch)
+                self.trainset.set_epoch(epoch)
 
         del self.trainloader
         gc.collect()
