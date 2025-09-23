@@ -8,9 +8,9 @@ if __name__ == '__main__':
     print('Device count run_pbt:', torch.cuda.device_count())
     import importlib
 
-    experiments = [12]  # List of experiment numbers to run
+    experiments = [10,11,12]  # List of experiment numbers to run
 
-    for i, experiment in enumerate([12]):
+    for i, experiment in enumerate([]):
 
         configname = (f'experiments.configs.pbt_config{experiment}')
         config = importlib.import_module(configname)
@@ -96,13 +96,9 @@ if __name__ == '__main__':
                 f"\"{config.autoattack_params}\" --validontest={config.validontest} --kaggle={kaggle} " \
                 
         p = subprocess.Popen(
-            [
-                cmdreplay,
-                "&&",
-                cmdeval
-            ],
+            f"{cmdreplay} && {cmdeval}",
             env=env,
-            shell=True  # allows "&&"
+            shell=True
         )
         processes.append(p)
 

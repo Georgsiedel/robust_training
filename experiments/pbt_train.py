@@ -355,7 +355,7 @@ def manual_replay(config, start_epoch, end_epoch, resume, final=False):
     Dataloader.create_transforms(args.train_aug_strat_orig, args.train_aug_strat_gen, args.RandomEraseProbability, args.grouped_stylization)
     Dataloader.load_base_data(test_only=False)
 
-    testsets_c = Dataloader.load_data_c(subset=True, subsetsize=500, valid_run=True) if args.validonc else None
+    testsets_c = Dataloader.load_data_c(subset=True, subsetsize=1000, valid_run=True) if args.validonc else None
     # Construct model
     #print(f'\nBuilding {args.modeltype} model with {args.modelparams} | Loss Function: {args.loss}, Stability Loss: {args.robust_loss}, Trades Loss: {args.trades_loss}')
     
@@ -454,7 +454,7 @@ def manual_replay(config, start_epoch, end_epoch, resume, final=False):
                     scheduler.step()
                 valid_acc_swa, valid_acc_robust_swa, valid_acc_adv_swa = valid_acc, valid_acc_robust, valid_acc_adv
 
-            sum_acc_rob = (valid_acc + 4 * valid_acc_robust) / 5
+            sum_acc_rob = valid_acc + valid_acc_robust
 
             metrics = {
                         "epoch": epoch,
@@ -629,7 +629,7 @@ def trainable(config):
                 scheduler.step()
             valid_acc_swa, valid_acc_robust_swa, valid_acc_adv_swa = valid_acc, valid_acc_robust, valid_acc_adv
 
-        sum_acc_rob = (valid_acc + 4 * valid_acc_robust) / 5
+        sum_acc_rob = valid_acc + valid_acc_robust
 
         metrics = {
                     "epoch": epoch,
@@ -711,7 +711,7 @@ def pbt():
     Dataloader = data.DataLoading(args.dataset, False, args.epochs, args.resize, args.run, args.number_workers, kaggle=args.kaggle)
     Dataloader.create_transforms(args.train_aug_strat_orig, args.train_aug_strat_gen, args.RandomEraseProbability, args.grouped_stylization)
     Dataloader.load_base_data(test_only=False)
-    testsets_c = Dataloader.load_data_c(subset=True, subsetsize=500, valid_run=True) if args.validonc else None
+    testsets_c = Dataloader.load_data_c(subset=True, subsetsize=1000, valid_run=True) if args.validonc else None
     testsets_c_ref = ray.put(testsets_c) 
     print('Succesfully pre-loaded corrupted validation data...')
 
