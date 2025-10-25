@@ -2,12 +2,14 @@ import random
 import torch
 import os
 from PIL import Image
-import torch.cuda.amp
 import torchvision.transforms as transforms
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, Sampler, DataLoader
 import numpy as np
 from run_0 import device
+import io
+import json
+import h5py
 
 def custom_collate_fn(batch, batch_transform_orig, batch_transform_gen, image_transform_orig, 
                       image_transform_gen, generated_ratio, batchsize):
@@ -144,6 +146,85 @@ class SubsetWithTransform(Dataset):
         if self.transform:
             image = self.transform(image)
         return image, label
+
+class HDF5ImageDataset(Dataset):
+    """
+    Unified HDF5 dataset loader supporting:
+    - Custom ImageNet-style HDF5 (variable-size images stored as .npy bytes)
+    - PCAM HDF5 from torchvision (fixed-size 4D tensors)
+    
+    Args:
+        path (str): Path to HDF5 file.
+        split (str): For PCAM, "train", "val", or "test". Ignored for ImageNet.
+        transform (callable, optional): Transform applied to PIL Image.
+        format (str): Either "imagenet" or "pcam".
+    """
+    def __init__(self, path, split="train", transform=None, format="imagenet"):
+        self.path = path
+        self.split = split
+        self.transform = transform
+        self.format = format.lower()
+        self.file = None  # lazy-opened per worker
+
+        # Determine dataset length without opening full file
+        with h5py.File(self.path, "r") as f:
+            if self.format == "imagenet":
+                self.length = len(f["labels"])
+                self.class_to_idx = json.loads(f.attrs.get("class_to_idx", "{}"))
+            elif self.format == "pcam":
+                key_img = f"camelyonpatch_level_2_split/{split}_images"
+                key_lbl = f"camelyonpatch_level_2_split/{split}_labels"
+                self.length = f[key_img].shape[0]
+                self.class_to_idx = None
+            else:
+                raise ValueError(f"Unknown format: {format}")
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, idx):
+        # Lazy open file per worker (safe with num_workers>0)
+        if self.file is None:
+            self.file = h5py.File(self.path, "r")
+
+        if self.format == "imagenet":
+            # variable-length .npy bytes per image
+            arr_uint8 = self.file["images"][idx]
+            img_bytes = arr_uint8.tobytes()
+            arr = np.load(io.BytesIO(img_bytes), allow_pickle=False)
+            img = Image.fromarray(arr, mode="RGB")
+            label = int(self.file["labels"][idx])
+
+        elif self.format == "pcam":
+            key_img = f"camelyonpatch_level_2_split/{self.split}_images"
+            key_lbl = f"camelyonpatch_level_2_split/{self.split}_labels"
+            arr = self.file[key_img][idx]           # shape=(3,H,W)
+            arr = np.transpose(arr, (1, 2, 0))     # CHW -> HWC
+            img = Image.fromarray(arr, mode="RGB")
+            label = int(self.file[key_lbl][idx])
+
+        else:
+            raise ValueError(f"Unknown format: {self.format}")
+
+        if self.transform:
+            img = self.transform(img)
+
+        return img, label
+
+    def __del__(self):
+        # Close file handle if open
+        try:
+            if self.file is not None:
+                self.file.close()
+        except Exception:
+            pass
+
+    def __del__(self):
+        try:
+            if self.file is not None:
+                self.file.close()
+        except Exception:
+            pass
 
 class CustomDataset(Dataset):
     def __init__(self, np_images, testset, resize, preprocessing):
