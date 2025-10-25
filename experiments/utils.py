@@ -533,7 +533,7 @@ class TestTracking:
                 test_corruptions_label = np.loadtxt(os.path.abspath(f'{self.c_labels_path}/c-labels.txt'), dtype=list)
                 if self.dataset in ['CIFAR10', 'CIFAR100', 'GTSRB', 'EuroSAT', 'PCAM', 'WaferMap']:
                     test_corruptions_bar_label = np.loadtxt(os.path.abspath(f'{self.c_labels_path}/c-bar-labels-cifar.txt'), dtype=list)
-                elif self.dataset == 'ImageNet' or self.dataset == 'TinyImageNet':
+                elif self.dataset in ['ImageNet', 'ImageNet-100', 'TinyImageNet']:
                     test_corruptions_bar_label = np.loadtxt(os.path.abspath(f'{self.c_labels_path}/c-bar-labels-IN.txt'), dtype=list)
                 else:
                     print('no c-bar corruption types defined for this dataset')

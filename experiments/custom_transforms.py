@@ -39,7 +39,7 @@ class TransformFactory:
     def _stylization(self, probability=0.95, alpha_min=0.2, alpha_max=1.0):
         vgg, decoder = style_transfer.load_models()
         style_feats = style_transfer.load_feat_files(self.style_path)
-        pixels = 224 if self.dataset == 'ImageNet' else 32 * self.factor
+        pixels = 224 if self.dataset in ['ImageNet', 'ImageNet-100'] else 32 * self.factor
         return style_transfer.NSTTransform(style_feats, vgg, decoder, alpha_min=alpha_min, alpha_max=alpha_max, probability=probability, pixels=pixels)
 
     def get_transforms_grouped(self, strat_name):
@@ -529,7 +529,7 @@ class DivideBy2:
         return x / 2.0
     
 def build_transform_c_bar(name, severity, dataset, resize):
-    assert dataset in ['CIFAR10', 'CIFAR100', 'ImageNet', 'TinyImageNet', 'GTSRB', 'PCAM', 'EuroSAT', 'WaferMap'],\
+    assert dataset in ['CIFAR10', 'CIFAR100', 'ImageNet', 'ImageNet-100', 'TinyImageNet', 'GTSRB', 'PCAM', 'EuroSAT', 'WaferMap'],\
             "Dataset not defined for c-bar benchmark."
     
     if dataset in ['CIFAR10', 'CIFAR100', 'GTSRB']: 
