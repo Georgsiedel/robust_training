@@ -1,15 +1,15 @@
 import numpy as np
 
-pbt_params = {'interval': 1, 'trials': 32, 'resample_probability': 0.0, 'burn_in_period': 10.0}
+pbt_params = {'interval': 1, 'trials': 24, 'resample_probability': 0.0}
 pbt_hyperparams = {"synth_ratio": 0.5, "stylize_prob_real": 0.2, "stylize_prob_synth": 0.2, "alpha_min_real": 1.0, "alpha_min_synth": 1.0}
 
 train_corruptions = np.array([
-{'noise_type': 'standard', 'epsilon': 0.0, 'sphere': False, 'distribution': 'beta2-5'},
-#{'noise_type': 'uniform-linf', 'epsilon': 0.2, 'sphere': False, 'distribution': 'uniform'},
-#{'noise_type': 'uniform-l0.5', 'epsilon': 12000000.0, 'sphere': False, 'distribution': 'uniform'},
-#{'noise_type': 'uniform-l1', 'epsilon': 1500.0, 'sphere': False, 'distribution': 'uniform'},
-#{'noise_type': 'uniform-l2', 'epsilon': 20.0, 'sphere': False, 'distribution': 'uniform'},
-#{'noise_type': 'uniform-l0-impulse', 'epsilon': 0.4, 'sphere': False, 'distribution': 'uniform'},
+#{'noise_type': 'standard', 'epsilon': 0.0, 'sphere': False, 'distribution': 'beta2-5'},
+{'noise_type': 'uniform-linf', 'epsilon': 0.2, 'sphere': False, 'distribution': 'uniform'},
+{'noise_type': 'uniform-l0.5', 'epsilon': 12000000.0, 'sphere': False, 'distribution': 'uniform'},
+{'noise_type': 'uniform-l1', 'epsilon': 1500.0, 'sphere': False, 'distribution': 'uniform'},
+{'noise_type': 'uniform-l2', 'epsilon': 20.0, 'sphere': False, 'distribution': 'uniform'},
+{'noise_type': 'uniform-l0-impulse', 'epsilon': 0.4, 'sphere': False, 'distribution': 'uniform'},
 ])
 noise_sparsity = 1.0
 noise_patch_scale = {'lower': 0.2, 'upper': 0.7}
@@ -48,9 +48,9 @@ robust_loss = False
 robust_lossparams = {'num_splits': 3, 'alpha': 12} #jsd if 3 splits, KL divergence if 2 splits
 mixup = {'alpha': 0.2, 'p': 0.0} #default alpha 0.2 #If both mixup and cutmix are >0, mixup or cutmix are selected by 0.5 chance
 cutmix = {'alpha': 1.0, 'p': 0.0} # default alpha 1.0 #If both mixup and cutmix are >0, mixup or cutmix are selected by 0.5 chance
-manifold = {'apply': False, 'noise_factor': 3}
+manifold = {'apply': True, 'noise_factor': 3}
 n2n_deepaugment = False
-RandomEraseProbability = 0.0
+RandomEraseProbability = 0.3
 swa = {'apply': True, 'start_factor': 0.9, 'lr_factor': 0.2}
 
 #define train and test corruptions:

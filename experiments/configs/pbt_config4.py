@@ -1,7 +1,7 @@
 import numpy as np
 
-pbt_params = {'interval': 1, 'trials': 24, 'resample_probability': 0.0}
-pbt_hyperparams = {"synth_ratio": 0.5, "stylize_prob_real": 0.2, "stylize_prob_synth": 0.2, "alpha_min_real": 1.0, "alpha_min_synth": 1.0}
+pbt_params = {'interval': 1, 'trials': 32, 'resample_probability': 0.0, 'burn_in_period': 20.0}
+pbt_hyperparams = {"synth_ratio": 0.5, "stylize_prob_orig": 0.2, "stylize_prob_synth": 0.2}
 
 train_corruptions = np.array([
 #{'noise_type': 'standard', 'epsilon': 0.0, 'sphere': False, 'distribution': 'beta2-5'},

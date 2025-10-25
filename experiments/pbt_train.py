@@ -325,14 +325,15 @@ def valid_epoch(net, validationloader, Traintracker, Dataloader, criterion, test
                 pbar.set_description(
                 '[Valid] Robust Accuracy Calculation. Last Robust Accuracy: {:.3f}'.format(Traintracker.valid_accs_robust[-1] if Traintracker.valid_accs_robust else 0))
                 pbar.update(1)
-            acc_c = compute_c_corruptions(args.dataset, testsets_c, net, batchsize=500, num_classes=Dataloader.num_classes, valid_run = True, 
-                                          workers = 0)[0]
+            accs_c, avg_loss_c = compute_c_corruptions(args.dataset, testsets_c, net, batchsize=args.batchsize, num_classes=Dataloader.num_classes, 
+                                                       criterion=criterion, valid_run = True, workers = 0)
+            acc_c = accs_c[0]
 
     acc = 100. * correct / total
     adv_acc = 100. * adv_correct / total
     #print('[Valid] Loss: {:.3f} | Acc: {:.3f} ({}/{}) | Adv Acc: {:.3f} ({}/{})'.format(avg_test_loss, acc, correct, total, adv_acc, adv_correct, total))
     #print('[Valid] Robust Accuracy Calculation. Last Robust Accuracy: {:.3f}'.format(Traintracker.valid_accs_robust[-1] if Traintracker.valid_accs_robust else 0))
-    return acc, avg_test_loss, acc_c, adv_acc
+    return acc, avg_test_loss, acc_c, adv_acc, avg_loss_c
 
 def manual_replay(config, start_epoch, end_epoch, resume, final=False):
     # Load and transform data
@@ -422,9 +423,9 @@ def manual_replay(config, start_epoch, end_epoch, resume, final=False):
 
             #get new generated data sample in the trainset and reset the augmentation seed for corrupted data validation
             # load augmented trainset and Dataloader
-            Dataloader.update_transforms(stylize_prob_orig=config.get("stylize_prob_real", None), 
+            Dataloader.update_transforms(stylize_prob_orig=config.get("stylize_prob_orig", None), 
                                     stylize_prob_syn=config.get("stylize_prob_synth", None), 
-                                    alpha_min_orig=config.get("alpha_min_real", None), 
+                                    alpha_min_orig=config.get("alpha_min_orig", None), 
                                     alpha_min_syn=config.get("alpha_min_synth", None), 
                                     RandomEraseProbability=config.get('random_erase_prob', None))
             Dataloader.load_augmented_traindata(target_size=len(Dataloader.base_trainset),
@@ -441,12 +442,12 @@ def manual_replay(config, start_epoch, end_epoch, resume, final=False):
                                                                                                         style_dataloader, pbar,
                                                                                                         config.get("input_noise", None), 
                                                                                                         config.get("manifold_noise", None))
-            valid_acc, valid_loss, valid_acc_robust, valid_acc_adv = valid_epoch(model, validationloader, Traintracker, Dataloader, criterion, testsets_c, pbar)
+            valid_acc, valid_loss, valid_acc_robust, valid_acc_adv, valid_loss_c = valid_epoch(model, validationloader, Traintracker, Dataloader, criterion, testsets_c, pbar)
             
             if args.swa["apply"] == True and (epoch + 1) > swa_start:
                 swa_model.update_parameters(model)
                 swa_scheduler.step()
-                valid_acc_swa, _, valid_acc_robust_swa, valid_acc_adv_swa = valid_epoch(swa_model, validationloader, Traintracker, Dataloader, criterion, testsets_c, pbar)
+                valid_acc_swa, _, valid_acc_robust_swa, valid_acc_adv_swa, valid_loss_c_swa = valid_epoch(swa_model, validationloader, Traintracker, Dataloader, criterion, testsets_c, pbar)
             else:
                 if args.lrschedule == 'ReduceLROnPlateau':
                     scheduler.step(valid_loss)
@@ -454,17 +455,19 @@ def manual_replay(config, start_epoch, end_epoch, resume, final=False):
                     scheduler.step()
                 valid_acc_swa, valid_acc_robust_swa, valid_acc_adv_swa = valid_acc, valid_acc_robust, valid_acc_adv
 
-            sum_acc_rob = valid_acc + valid_acc_robust
+            sum_acc_rob = valid_acc_robust + valid_acc
+            sum_losses = valid_loss + valid_loss_c
 
             metrics = {
                         "epoch": epoch,
                         "val_acc": float(valid_acc),
                         "val_rob": float(valid_acc_robust),
                         "sum_acc_rob": float(sum_acc_rob),
+                        "sum_losses": float(sum_losses),
                         "synth_ratio": float(config["synth_ratio"]) if "synth_ratio" in config else None,
-                        "stylize_prob_real": float(config["stylize_prob_real"]) if "stylize_prob_real" in config else None,
+                        "stylize_prob_orig": float(config["stylize_prob_orig"]) if "stylize_prob_orig" in config else None,
                         "stylize_prob_synth": float(config["stylize_prob_synth"]) if "stylize_prob_synth" in config else None,
-                        "alpha_min_real": float(config["alpha_min_real"]) if "alpha_min_real" in config else None,
+                        "alpha_min_orig": float(config["alpha_min_orig"]) if "alpha_min_orig" in config else None,
                         "alpha_min_synth": float(config["alpha_min_synth"]) if "alpha_min_synth" in config else None,
                         "random_erase_prob": float(config["random_erase_prob"]) if "random_erase_prob" in config else None,
                         "input_noise": float(config["input_noise"]) if "input_noise" in config else None,
@@ -597,9 +600,9 @@ def trainable(config):
         #get new generated data sample in the trainset and reset the augmentation seed for corrupted data validation
         
         # load augmented trainset and Dataloader
-        Dataloader.update_transforms(stylize_prob_orig=config.get("stylize_prob_real", None), 
+        Dataloader.update_transforms(stylize_prob_orig=config.get("stylize_prob_orig", None), 
                                 stylize_prob_syn=config.get("stylize_prob_synth", None), 
-                                alpha_min_orig=config.get("alpha_min_real", None), 
+                                alpha_min_orig=config.get("alpha_min_orig", None), 
                                 alpha_min_syn=config.get("alpha_min_synth", None), 
                                 RandomEraseProbability=config.get('random_erase_prob', None))
         Dataloader.load_augmented_traindata(target_size=len(Dataloader.base_trainset),
@@ -616,12 +619,12 @@ def trainable(config):
                                                                                                     style_dataloader, pbar=None,
                                                                                                     noise_config=config.get("input_noise", None), 
                                                                                                     manifold_noise_config=config.get("manifold_noise", None))
-        valid_acc, valid_loss, valid_acc_robust, valid_acc_adv = valid_epoch(model, validationloader, Traintracker, Dataloader, criterion, testsets_c)
+        valid_acc, valid_loss, valid_acc_robust, valid_acc_adv, valid_loss_c = valid_epoch(model, validationloader, Traintracker, Dataloader, criterion, testsets_c)
 
         if swa["apply"] == True and (epoch + 1) > swa_start:
             swa_model.update_parameters(model)
             swa_scheduler.step()
-            valid_acc_swa, _, valid_acc_robust_swa, valid_acc_adv_swa = valid_epoch(swa_model, validationloader, Traintracker, Dataloader, criterion, testsets_c)
+            valid_acc_swa, _, valid_acc_robust_swa, valid_acc_adv_swa, valid_loss_c = valid_epoch(swa_model, validationloader, Traintracker, Dataloader, criterion, testsets_c)
         else:
             if args.lrschedule == 'ReduceLROnPlateau':
                 scheduler.step(valid_loss)
@@ -629,17 +632,19 @@ def trainable(config):
                 scheduler.step()
             valid_acc_swa, valid_acc_robust_swa, valid_acc_adv_swa = valid_acc, valid_acc_robust, valid_acc_adv
 
-        sum_acc_rob = valid_acc + valid_acc_robust
+        sum_acc_rob = valid_acc_robust + valid_acc
+        sum_losses = valid_loss + valid_loss_c
 
         metrics = {
                     "epoch": epoch,
                     "val_acc": float(valid_acc),
                     "val_rob": float(valid_acc_robust),
                     "sum_acc_rob": float(sum_acc_rob),
+                    "sum_losses": float(sum_losses),
                     "synth_ratio": float(config["synth_ratio"]) if "synth_ratio" in config else None,
-                    "stylize_prob_real": float(config["stylize_prob_real"]) if "stylize_prob_real" in config else None,
+                    "stylize_prob_orig": float(config["stylize_prob_orig"]) if "stylize_prob_orig" in config else None,
                     "stylize_prob_synth": float(config["stylize_prob_synth"]) if "stylize_prob_synth" in config else None,
-                    "alpha_min_real": float(config["alpha_min_real"]) if "alpha_min_real" in config else None,
+                    "alpha_min_orig": float(config["alpha_min_orig"]) if "alpha_min_orig" in config else None,
                     "alpha_min_synth": float(config["alpha_min_synth"]) if "alpha_min_synth" in config else None,
                     "random_erase_prob": float(config["random_erase_prob"]) if "random_erase_prob" in config else None,
                     "input_noise": float(config["input_noise"]) if "input_noise" in config else None,
@@ -672,8 +677,7 @@ def trainable(config):
                         "history": history,
                         }, os.path.join(tmpdir, "checkpoint.pt"),
                 )
-                tune.report(metrics=metrics, 
-                        checkpoint=tune.Checkpoint.from_directory(tmpdir))
+                tune.report(metrics=metrics, checkpoint=tune.Checkpoint.from_directory(tmpdir))
         else:
             tune.report(metrics=metrics)
 
@@ -689,13 +693,13 @@ def pbt():
         "synth_ratio": [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3,
                                 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65,
                                 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0],
-        "stylize_prob_real": [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3,
+        "stylize_prob_orig": [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3,
                                 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65,
                                 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0],
         "stylize_prob_synth": [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3,
                                 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65,
                                 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0],
-        "alpha_min_real": [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3,
+        "alpha_min_orig": [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3,
                                 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65,
                                 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0],
         "alpha_min_synth": [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3,
@@ -735,8 +739,8 @@ def pbt():
     pbt = PopulationBasedTraining(
         time_attr="training_iteration",
         perturbation_interval = args.pbt_params.get('interval', 1),
-        metric="sum_acc_rob",
-        mode="max",
+        metric=args.pbt_params.get('metric', "sum_acc_rob"),
+        mode=args.pbt_params.get('mode', "max"),
         resample_probability=args.pbt_params.get('resample_probability', 0.0),
         hyperparam_mutations=filtered_hyperparameter_mutations,
         burn_in_period = args.pbt_params.get('burn_in_period', 1.0),
@@ -770,7 +774,7 @@ def pbt():
                 name=experiment_name,
                 storage_path=storage_path,         # where Ray stores experiments
                 checkpoint_config=tune.CheckpointConfig(num_to_keep=2),
-                stop={"training_iteration": int((args.epochs + args.warmupepochs)/args.pbt_params.get('interval', 1))},
+                stop={"training_iteration": args.epochs + args.warmupepochs},
                 verbose=0,
                 callbacks=[progress_callback], 
                 log_to_file=("/dev/null", "/dev/null")
@@ -842,6 +846,10 @@ def pbt():
     plot_path = os.path.abspath(os.path.join(os.path.dirname(Traintracker.config_dst_path), f'pbt_config{args.experiment}_policy_plot_run_{args.run}.png'))
     policy_results_path = os.path.abspath(os.path.join(os.path.dirname(Traintracker.config_dst_path), f'pbt_config{args.experiment}_policy_run_{args.run}.txt'))
     
+    filtered_start_values.pop("alpha_min_real", None)
+    filtered_start_values.pop("alpha_min_synth", None)
+
+
     _ = utils.plot_policy_development(policy, initial_config, epochs=total_epochs, plot_keys=filtered_start_values, 
                                 output_path=plot_path)
     shutil.copyfile(best_policy_path, policy_results_path)
@@ -903,6 +911,54 @@ def replay_only():
                                                        f'config{args.experiment}_policy_run_{args.run}.txt'))
     return policy_results_path
 
+def plot_only():
+    
+    hyperparameter_mutations = { #these will only be used if defined as keys in args.pbt_hyperparams
+        "synth_ratio": [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3,
+                                0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65,
+                                0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0],
+        "stylize_prob_orig": [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3,
+                                0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65,
+                                0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0],
+        "stylize_prob_synth": [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3,
+                                0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65,
+                                0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0],
+        "alpha_min_orig": [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3,
+                                0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65,
+                                0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0],
+        "alpha_min_synth": [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3,
+                                0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65,
+                                0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0],
+        "random_erase_prob": [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3,
+                                0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65,
+                                0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0],
+        "input_noise": [True, False],
+        "manifold_noise": [True, False],
+        }
+
+    start_values = {"synth_ratio": 0.5, "stylize_prob_orig": 0.2, "stylize_prob_synth": 0.2}
+    _, filtered_start_values = utils.filter_common_keys(start_values, hyperparameter_mutations)
+
+    Traintracker = utils.TrainTracking(args.dataset, args.modeltype, args.lrschedule, args.experiment, args.run,
+                                args.validonc, args.validonadv, args.swa, pbt=True)
+    policy_results_path = os.path.abspath(os.path.join(os.path.dirname(Traintracker.config_dst_path), f'pbt_config{args.experiment}_policy_run_{args.run}.txt'))
+    
+    # Use the replay file (whether real or dummy)
+    replay = PopulationBasedTrainingReplay(policy_results_path)
+    policy = replay._policy
+    initial_config = replay.config
+
+    total_epochs = args.epochs + args.warmupepochs
+
+    #save policy and plot
+    plot_path = os.path.abspath(os.path.join(os.path.dirname(Traintracker.config_dst_path), f'pbt_config{args.experiment}_policy_plot_run_{args.run}.png'))
+    
+    filtered_start_values.pop("alpha_min_real", None)
+    filtered_start_values.pop("alpha_min_synth", None)
+
+    _ = utils.plot_policy_development(policy, initial_config, fontsize='xx-large', epochs=total_epochs, 
+                                      plot_keys=filtered_start_values, output_path=plot_path)
+
 if __name__ == '__main__':
 
     if args.mode == 'tune':
@@ -913,5 +969,7 @@ if __name__ == '__main__':
     elif args.mode == 'both':
         policy_results_path = pbt()    
         replay_pbt(policy_results_path)
+    elif args.mode == 'plot':
+        plot_only()
     else:
         print('Please provide a valid mode: "tune", "replay", or "both".')

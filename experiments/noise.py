@@ -80,47 +80,6 @@ def patch_gaussian_style_patch_mask(im_size: int, window_size: int):
 
     return mask
 
-def apply_noise_add_and_mult(batch, minibatchsize, corruptions, normalized, dataset,
-                        manifold=False, manifold_factor=1, noise_sparsity=0.0, noise_patch_scale={'lower': 0.3, 'upper': 1.0}):
-
-    if corruptions is None:
-        return batch
-    #Calculate the mean values for each channel across all images
-    mean, std = normalization_values(batch, dataset, normalized, manifold, manifold_factor, verbose=False)
-    minibatches = batch.view(-1, minibatchsize, batch.size()[1], batch.size()[2], batch.size()[3])
-    new_batches = []
-    for id, minibatch in enumerate(minibatches):
-        
-        corruptions_list = random.sample(list(corruptions), k=2)
-        clean = minibatch.clone()
-
-        for id, (corruption) in enumerate(corruptions_list):
-            if corruption['distribution'] == 'uniform':
-                d = dist.Uniform(0, 1).sample()
-            elif corruption['distribution'] == 'beta2-5':
-                d = np.random.beta(2, 5)
-            elif corruption['distribution'] == 'max':
-                d = 1
-            else:
-                print('Unknown distribution for epsilon value of p-norm corruption. Max value chosen instead.')
-                d = 1
-            if d == 0: #dist sampling include lower bound but exclude upper, but we do not want eps = 0
-                d = 1
-            epsilon = float(d) * float(corruption['epsilon'])
-            sparsity = random.random() * noise_sparsity
-            multiplicative = True if id == 0 else False
-            minibatch = sample_lp_corr_batch_inputspace(corruption['noise_type'], epsilon, minibatch,
-                                            corruption['sphere'], mean, std, sparsity, multiplicative=multiplicative)
-
-        mask = random_erasing_style_mask(minibatch, noise_patch_scale = noise_patch_scale, ratio = [0.5, 2.0])
-        minibatch = torch.where(mask, minibatch, clean)
-        new_batches.append(minibatch)
-
-    new_batch = torch.cat(new_batches, dim=0)
-    new_batch = new_batch.view(-1, batch.size()[1], batch.size()[2], batch.size()[3])
-
-    return new_batch
-
 def _noising(x, add_noise_level=0.0, mult_noise_level=0.0, sparse_level=0.0, l0_level = 0.0):
     # based on https://github.com/erichson/NoisyMix
     add_noise = 0.0

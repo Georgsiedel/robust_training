@@ -469,7 +469,7 @@ class TestTracking:
         self.kaggle = kaggle
         self.pbt = pbt
         self.pbt_placeholder = 'pbt_' if pbt == True else '' #just to have different filenames for pbt and non-pbt runs
-        self.report_path_tune = os.path.abspath(f'./results/{self.dataset}/{self.modeltype}/{self.pbt_placeholder}config{self.experiment}_result_metrics_tune.csv')
+        self.report_path_tune = os.path.abspath(f'./results/{self.dataset}/{self.modeltype}/{self.pbt_placeholder}config{self.experiment}_result_metrics.csv')
         self.report_path_replay = os.path.abspath(f'./results/{self.dataset}/{self.modeltype}/{self.pbt_placeholder}config{self.experiment}_result_metrics_replay.csv')
         os.makedirs(os.path.dirname(self.report_path_tune), exist_ok=True)
         os.makedirs(os.path.dirname(self.report_path_replay), exist_ok=True)
@@ -699,11 +699,11 @@ class PBTProgressCallback(Callback):
             
             # Extract hyperparameters (handle None values)
             synth_ratio = result.get('synth_ratio', 0.0) or 0.0
-            style_real = result.get('stylize_prob_real', 0.0) or 0.0
+            style_real = result.get('stylize_prob_orig', 0.0) or 0.0
             style_synth = result.get('stylize_prob_synth', 0.0) or 0.0
             
             if self.show_all_params:
-                alpha_real = result.get('alpha_min_real', 0.0) or 0.0
+                alpha_real = result.get('alpha_min_orig', 0.0) or 0.0
                 alpha_synth = result.get('alpha_min_synth', 0.0) or 0.0
                 re_prob = result.get('random_erase_prob', 0.0) or 0.0
                 input_n = "T" if result.get('input_noise', False) else "F"
@@ -782,7 +782,7 @@ def filter_common_keys(start_values, hyperparameter_mutations):
     
     return filtered_mutations, filtered_start_values
 
-def plot_policy_development(policy_list, initial_config, epochs=300, plot_keys=None, output_path=None):
+def plot_policy_development(policy_list, initial_config, fontsize='medium', epochs=300, plot_keys=None, output_path=None):
     """
     Simplified plotting function that stacks all selected keys vertically and optionally saves the figure.
     
@@ -883,14 +883,16 @@ def plot_policy_development(policy_list, initial_config, epochs=300, plot_keys=N
         
         ax.step(x, y, where='post')
         ax.scatter(x, y, s=6)
-        ax.set_ylabel(key, rotation=0, labelpad=60, va='center')
+        ax.set_ylabel(key, rotation=0, labelpad=70, va='center', fontsize=fontsize)
+        ax.tick_params(axis='y', labelsize=fontsize)
         ax.set_ylim(-0.05, 1.05)
         ax.grid(alpha=0.25)
         # vertical lines at segment starts (skip initial)
         for s, _, _ in segments[1:]:
             ax.axvline(s, linestyle='--', alpha=0.25)
     
-    axes[-1].set_xlabel("Epoch")
+    axes[-1].set_xlabel("Epoch", fontsize=fontsize)
+    axes[-1].tick_params(axis='x', labelsize=fontsize)
     plt.tight_layout()
     
     # Save if requested

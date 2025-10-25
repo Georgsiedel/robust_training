@@ -9,4 +9,15 @@ venv/
 experiments/adaIN/__pycache__/
 __pycache__/
 visualization/
+.devcontainer/experiments/.pytest_cache
+experiments/__pycache__/
+experiments/models/__pycache__/
+experiments/configs/__pycache__/
+.idea/
+organizational/
+venv/
+.venv/
+experiments/adaIN/__pycache__/
+__pycache__/
 .devcontainer/
+docker-compose.yml

@@ -8,9 +8,9 @@ if __name__ == '__main__':
     print('Device count run_pbt:', torch.cuda.device_count())
     import importlib
 
-    experiments = [10,11,12]  # List of experiment numbers to run
+    experiments = [14]  # List of experiment numbers to run
 
-    for i, experiment in enumerate([]):
+    for i, experiment in enumerate([14]):
 
         configname = (f'experiments.configs.pbt_config{experiment}')
         config = importlib.import_module(configname)
@@ -52,7 +52,7 @@ if __name__ == '__main__':
         #this parallelizes replay and evaluation across multiple GPUs if available
         env = os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = str(i)
-        print(f"Starting replay + eval of experiment {experiment} on GPU {i}")
+        print(f"Starting replay of experiment {experiment} on GPU {i}")
 
         configname = (f'experiments.configs.pbt_config{experiment}')
         config = importlib.import_module(configname)
@@ -85,6 +85,32 @@ if __name__ == '__main__':
                 f"\"{config.noise_patch_scale}\" --generated_ratio={config.generated_ratio} " \
                 f"--n2n_deepaugment={config.n2n_deepaugment} --grouped_stylization={grouped_stylization} " \
                 f"--kaggle={kaggle} "
+      
+        p = subprocess.Popen(
+            [
+                cmdreplay
+            ],
+            env=env,
+            shell=True  # allows "&&"
+        )
+        processes.append(p)
+
+    for p in processes:
+        p.wait()
+
+    processes = []
+
+    for i, experiment in enumerate(experiments):
+        
+        #this parallelizes replay and evaluation across multiple GPUs if available
+        env = os.environ.copy()
+        env["CUDA_VISIBLE_DEVICES"] = str(i)
+        print(f"Starting eval of experiment {experiment} on GPU {i}")
+
+        configname = (f'experiments.configs.pbt_config{experiment}')
+        config = importlib.import_module(configname)
+
+        kaggle = False
 
         # Calculate accuracy and robust accuracy, evaluating each trained network on each corruption
         cmdeval = f"python experiments/eval.py --experiment={experiment} --runs={1} --pbt={True} --batchsize={1000} " \
@@ -96,11 +122,13 @@ if __name__ == '__main__':
                 f"\"{config.autoattack_params}\" --validontest={config.validontest} --kaggle={kaggle} " \
                 
         p = subprocess.Popen(
-            f"{cmdreplay} && {cmdeval}",
+            [
+                cmdeval
+            ],
             env=env,
             shell=True
         )
         processes.append(p)
-
+    
     for p in processes:
         p.wait()

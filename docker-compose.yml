@@ -26,6 +26,10 @@ services:
       - ./run_1.py:/workspace/run_1.py
       - ./run_2.py:/workspace/run_2.py
       - ./run_3.py:/workspace/run_3.py
+      - ./run_4.py:/workspace/run_4.py
+      - ./run_5.py:/workspace/run_5.py
+      - ./run_6.py:/workspace/run_6.py
+      - ./run_7.py:/workspace/run_7.py
     #command: python run_exp.py  # Run the main script for this container
     tty: true
 

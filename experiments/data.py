@@ -692,7 +692,7 @@ class DataLoading():
                 # This should be updated when config gives new transforms parameters, when there is generated data or when there is stylization
                 del self.trainset
 
-                self.load_augmented_traindata(self.target_size, generated_ratio=config["synth_ratio"], epoch=epoch, robust_samples=self.robust_samples, grouped_stylization=False)
+                self.load_augmented_traindata(self.target_size, generated_ratio=self.generated_ratio, epoch=epoch, robust_samples=self.robust_samples, grouped_stylization=False)
         else:    
             if ((self.generated_ratio != 0.0) and epoch != 0 and epoch != start_epoch) or config is not None:
                 # This should be updated when config gives new transforms parameters, when there is generated data or when there is stylization

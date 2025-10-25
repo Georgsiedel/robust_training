@@ -49,11 +49,11 @@ def compute_p_corruptions(testloader, model, test_corruptions, dataset):
         acc = 100.*correct/total
         return acc
 
-def compute_c_corruptions(dataset, testsets_c, model, batchsize, num_classes, valid_run = False, workers = 0):
+def compute_c_corruptions(dataset, testsets_c, model, batchsize, num_classes, criterion = None, valid_run = False, workers = 0):
 
     from data import seed_worker
 
-    accs_c, rmsce_c_list = [], []
+    accs_c, rmsce_c_list, losses_c = [], [], []
     if valid_run == False:
         print(f"Testing on {dataset}-c/c-bar")
 
@@ -66,8 +66,9 @@ def compute_c_corruptions(dataset, testsets_c, model, batchsize, num_classes, va
             workers = workers
         testloader_c = DataLoader(corruption_testset, batch_size=batchsize, shuffle=False, pin_memory=True, num_workers=workers, 
                                   worker_init_fn=seed_worker, generator=t)
-        acc, rmsce_c = compute_c(testloader_c, model, num_classes, dataset)
+        acc, rmsce_c, avg_loss_c = compute_c(testloader_c, model, num_classes, dataset, criterion)
         accs_c.append(acc)
+        losses_c.append(avg_loss_c)
         rmsce_c_list.append(rmsce_c)
         if valid_run == False:
             print(acc, f"% mean (avg. over 5 intensities) Accuracy on {dataset}-c corrupted data of type", corruption)
@@ -84,13 +85,15 @@ def compute_c_corruptions(dataset, testsets_c, model, batchsize, num_classes, va
         accs_c.append(sum(accs_c[19:29]) / 10)
         accs_c.append((sum(accs_c[3:15]) + sum(accs_c[16:19]) + sum(accs_c[20:29])) / 24)
         accs_c.append(rmsce_c)
+    
+    avg_loss_c = sum(losses_c) / len(losses_c)
 
-    return accs_c
+    return accs_c, avg_loss_c
 
-def compute_c(loader_c, model, num_classes, dataset):
+def compute_c(loader_c, model, num_classes, dataset, criterion = None):
     with torch.no_grad():
         model.eval()
-        correct, total = 0, 0
+        correct, total, loss_c = 0, 0, 0
         if dataset in ['WaferMap']:
             calibration_metric = BinaryCalibrationError(n_bins=15, norm='l1')
         else:
@@ -102,7 +105,13 @@ def compute_c(loader_c, model, num_classes, dataset):
         for batch_idx, (inputs, targets) in enumerate(loader_c):
             inputs, targets = inputs.to(device, dtype=torch.float), targets.to(device)
             with torch.amp.autocast('cuda'):
+                
                 targets_pred = model(inputs)
+                if criterion is not None:
+                    loss = criterion.test(targets_pred, targets)
+                    loss_c += loss.item()
+            
+            avg_test_loss_c = loss_c / (batch_idx + 1)
             
             if dataset in ['WaferMap']:
                 predicted = (targets_pred > 0.5).float() 
@@ -125,5 +134,5 @@ def compute_c(loader_c, model, num_classes, dataset):
             rmsce_c = float(calibration_metric(all_targets_pred, all_targets).cpu())
         acc = 100. * correct / total
 
-        return acc, rmsce_c
+        return acc, rmsce_c, avg_test_loss_c
 

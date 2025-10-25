@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch
 import numpy as np
 from experiments.mixup import mixup_process
-from experiments.noise import apply_noise, noise_up, apply_noise_add_and_mult
+from experiments.noise import apply_noise, noise_up
 from experiments.data import normalization_values
 from experiments.deepaugment_n2n import N2N_DeepAugment
 

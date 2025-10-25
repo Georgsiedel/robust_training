@@ -1,0 +1,10 @@
+blue_noise
+brownish_noise
+checkerboard_cutout
+circular_motion_blur
+inverse_sparkles
+lines
+pinch_and_twirl
+ripple
+sparkles
+transverse_chromatic_abberation

@@ -274,7 +274,7 @@ def valid_epoch(pbar, net):
             pbar.set_description(
                 '[Valid] Robust Accuracy Calculation. Last Robust Accuracy: {:.3f}'.format(Traintracker.valid_accs_robust[-1] if Traintracker.valid_accs_robust else 0))
             acc_c = compute_c_corruptions(args.dataset, testsets_c, net, batchsize=500, num_classes=Dataloader.num_classes, valid_run = True, 
-                                          workers = 0)[0]
+                                          workers = 0)[0][0]
         pbar.update(1)
 
     acc = 100. * correct / total
@@ -295,8 +295,7 @@ if __name__ == '__main__':
 
     lossparams = args.trades_lossparams | args.robust_lossparams | args.lossparams
     criterion = losses.Criterion(args.loss, trades_loss=args.trades_loss, robust_loss=args.robust_loss, **lossparams)
-
-    Dataloader = data.DataLoading(args.dataset, args.validontest, args.epochs, args.generated_ratio, args.resize, args.run, args.number_workers, kaggle=args.kaggle)
+    Dataloader = data.DataLoading(args.dataset, args.validontest, args.epochs, args.resize, args.run, args.number_workers, kaggle=args.kaggle)
     Dataloader.create_transforms(args.train_aug_strat_orig, args.train_aug_strat_gen, args.RandomEraseProbability, args.grouped_stylization)
     Dataloader.load_base_data(test_only=False)
     testsets_c = Dataloader.load_data_c(subset=True, subsetsize=100, valid_run=True) if args.validonc else None
@@ -337,7 +336,7 @@ if __name__ == '__main__':
 
     # Resume from checkpoint
     if args.resume == True:
-        start_epoch, model, swa_model, optimizer, scheduler, swa_scheduler = Checkpointer.load_model(model, swa_model,
+        start_epoch, model, swa_model, optimizer, scheduler, swa_scheduler, _ = Checkpointer.load_model(model, swa_model,
                                                                     optimizer, scheduler, swa_scheduler, 'standard')
         Traintracker.load_learning_curves()
         print('\nResuming from checkpoint after epoch', start_epoch)
@@ -354,6 +353,7 @@ if __name__ == '__main__':
     
         # load augmented trainset and Dataloader
         Dataloader.load_augmented_traindata(target_size=len(Dataloader.base_trainset),
+                                            generated_ratio=args.generated_ratio,
                                             epoch=start_epoch,
                                             robust_samples=criterion.robust_samples,
                                             grouped_stylization=args.grouped_stylization)
