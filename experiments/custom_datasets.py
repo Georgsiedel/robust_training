@@ -482,7 +482,7 @@ class StyleDataset(Dataset):
             self.transform = transforms.Resize((64, 64), antialias=True)
         elif dataset_type == "PCAM":
             self.transform = transforms.Resize((64, 64), antialias=True)
-        elif dataset_type == "ImageNet":
+        elif dataset_type in ["ImageNet", 'ImageNet-100']:
             self.transform = transforms.Resize((224, 224), antialias=True)
         else:
             raise AttributeError(f"Dataset: {dataset_type} is an unrecognized dataset")

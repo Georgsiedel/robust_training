@@ -34,7 +34,7 @@ def normalization_values(batch, dataset, normalized, manifold=False, manifold_fa
         elif dataset == 'CIFAR100':
             mean = torch.tensor([0.50707516, 0.48654887, 0.44091784]).view(1, 3, 1, 1).to(device)
             std = torch.tensor([0.26733429, 0.25643846, 0.27615047]).view(1, 3, 1, 1).to(device)
-        elif (dataset == 'ImageNet' or dataset == 'TinyImageNet'):
+        elif dataset in ['ImageNet', 'TinyImageNet', 'ImageNet-100']:
             mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(device)
             std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(device)
         else:
@@ -118,7 +118,7 @@ class DataLoading():
         self.number_workers = number_workers
         self.kaggle = kaggle
 
-        if dataset in ['CIFAR10', 'CIFAR100', 'GTSRB','ImageNet']:
+        if dataset in ['CIFAR10', 'CIFAR100', 'GTSRB','ImageNet', 'ImageNet-100']:
             self.factor = 1
         elif dataset in ['TinyImageNet', 'EuroSAT', 'Wafermap']:
             self.factor = 2
@@ -177,14 +177,14 @@ class DataLoading():
 
         # transformations of validation/test set and necessary transformations for training
         # always done (even for clean images while training, when using robust loss)
-        if self.dataset == 'ImageNet':
+        if self.dataset in ['ImageNet', 'ImageNet-100']:
             self.transforms_preprocess = transforms.Compose([t])
             self.transforms_preprocess_additional_test = transforms.Compose([r256, cc224])
         elif self.dataset == 'GTSRB':
             self.transforms_preprocess = transforms.Compose([t, r32])
         elif self.dataset == 'WaferMap':
             #https://github.com/Junliangwangdhu/WaferMap/tree/master
-            #preprocessing once upon loading as below, not on the fly (small set fits in memory, lots of operations)
+            #preprocessing once upon load_base_data, not on the fly (small set fits in memory, lots of operations)
             self.transforms_preprocess = transforms.Compose([
                 #t,
                 #custom_transforms.ToFloat32(),
@@ -195,11 +195,11 @@ class DataLoading():
         else:
             self.transforms_preprocess = transforms.Compose([t])
         
-        if self.resize == True and self.dataset != 'ImageNet':
+        if self.resize == True and self.dataset not in ['ImageNet', 'ImageNet-100']:
             self.transforms_preprocess = transforms.Compose([t, r224])
 
         # standard augmentations of training set, without tensor transformation
-        if self.dataset == 'ImageNet':
+        if self.dataset in ['ImageNet', 'ImageNet-100']:
             self.transforms_basic = transforms.Compose([flip, rrc224])
         elif self.dataset in ['CIFAR10', 'CIFAR100', 'GTSRB']:
             self.transforms_basic = transforms.Compose([flip, c32])
@@ -210,7 +210,7 @@ class DataLoading():
         elif self.dataset in ['WaferMap']:
             self.transforms_basic = transforms.Compose([c64_WM, flip, flip_v])
 
-        if self.resize == True and self.dataset != 'ImageNet':
+        if self.resize == True and self.dataset not in ['ImageNet', 'ImageNet-100']:
             self.transforms_basic = transforms.Compose([flip, c224])
 
         self.stylization_orig, self.transforms_orig_after_style, self.transforms_orig_after_nostyle = custom_transforms.get_transforms_map(train_aug_strat_orig, re, self.dataset, self.factor, grouped_stylization, self.style_feats_path)
@@ -257,7 +257,7 @@ class DataLoading():
 
         if self.validontest:
 
-            if self.dataset == 'ImageNet':
+            if self.dataset in ['ImageNet', 'ImageNet-100']:
                 self.testset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/val'),
                                                                 transform=transforms.Compose([self.transforms_preprocess, self.transforms_preprocess_additional_test]))
                 if test_only:
@@ -371,7 +371,7 @@ class DataLoading():
             self.num_classes = extract_num_classes(self.testset, labels=all_labels)
 
         else:
-            if self.dataset in ['ImageNet', 'TinyImageNet']:
+            if self.dataset in ['ImageNet', 'TinyImageNet', 'ImageNet-100']:
                 base_trainset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/train'))
             elif self.dataset in ['CIFAR10', 'CIFAR100']:
                 load_helper = getattr(torchvision.datasets, self.dataset)
@@ -424,17 +424,20 @@ class DataLoading():
 
             all_labels = extract_labels(base_trainset)
 
+            #use 20% of training set as validation set, but at most 10000 images
+            testsplit = 0.2 if len(base_trainset) <= 50000 else 10000
+
             train_indices, val_indices, _, _ = train_test_split(
                 range(len(base_trainset)),
                 all_labels,
                 stratify=all_labels,
-                test_size=0.2,
+                test_size=testsplit,
                 random_state=self.run)  # same validation split for same runs, but new validation on multiple runs
             
             if test_only == False:
                 self.base_trainset = Subset(base_trainset, train_indices)
 
-            if self.dataset == 'ImageNet':
+            if self.dataset in ['ImageNet', 'ImageNet-100']:
                 self.testset = SubsetWithTransform(Subset(base_trainset, val_indices), transforms.Compose([self.transforms_preprocess, self.transforms_preprocess_additional_test]))
             else:
                 self.testset = SubsetWithTransform(Subset(base_trainset, val_indices), transforms.Compose([self.transforms_preprocess]))
@@ -609,7 +612,7 @@ class DataLoading():
                 else:
                     c_datasets = self.precompute_and_append_c_data(set, c_datasets, corruption, csv_handler, subset, subsetsize, valid_run)
                     
-        elif self.dataset == 'ImageNet' or self.dataset == 'TinyImageNet':
+        elif self.dataset in ['ImageNet', 'TinyImageNet', 'ImageNet-100']:
 
             csv_handler = CsvHandler(os.path.abspath(f'{self.c_labels_path}/imagenet_c_bar.csv'))
             corruptions_bar = np.asarray(csv_handler.read_corruptions())
@@ -672,7 +675,7 @@ class DataLoading():
                                     num_workers=self.number_workers, worker_init_fn=seed_worker, 
                                     generator=g, persistent_workers=False)
         
-        val_workers = self.number_workers if self.dataset=='ImageNet' else 0
+        val_workers = self.number_workers if self.dataset in ['ImageNet', 'ImageNet-100'] else 0
         self.testloader = DataLoader(self.testset, batch_size=batchsize, pin_memory=True, num_workers=val_workers)
 
         return self.trainloader, self.testloader
