@@ -1,0 +1,6 @@
+airplane=['airplane']
+truck=['truck']
+cat=['cat']
+dog=['dog']
+car=['automobile']
+bird=['bird']
