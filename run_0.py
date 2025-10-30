@@ -7,12 +7,12 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 if __name__ == '__main__':
 
-    for experiment in [528,155]:
+    for experiment in [3]:
 
         configname = (f'experiments.configs.config{experiment}')
         config = importlib.import_module(configname)
 
-        grouped_stylization = False
+        stylization_first = True
         kaggle = False
 
         print('Starting experiment #',experiment, 'on', config.dataset, 'dataset')
@@ -21,7 +21,7 @@ if __name__ == '__main__':
         if experiment in [22]:
             run_iters = [2]
         else:
-            run_iters = [0,1,2]
+            run_iters = [0]
 
         for run in run_iters:
 
@@ -34,9 +34,10 @@ if __name__ == '__main__':
                     f"--earlystop={config.earlystop} --earlystopPatience={config.earlystopPatience} --optimizer=" \
                     f"{config.optimizer} --optimizerparams=\"{config.optimizerparams}\" --modeltype=" \
                     f"{config.modeltype} --modelparams=\"{config.modelparams}\" --resize={config.resize} " \
-                    f"--train_aug_strat_orig={config.train_aug_strat_orig} " \
-                    f"--train_aug_strat_gen={config.train_aug_strat_gen} --loss=" \
-                    f"{config.loss} --lossparams=\"{config.lossparams}\" --trades_loss={config.trades_loss} " \
+                    f"--style_orig=\"{config.style_orig}\" --train_aug_strat_orig={config.train_aug_strat_orig} " \
+                    f"--style_gen=\"{config.style_gen}\" --train_aug_strat_gen={config.train_aug_strat_gen} " \
+                    f"--style_and_aug_orig={config.style_and_aug_orig} --style_and_aug_gen={config.style_and_aug_gen} " \
+                    f"--loss={config.loss} --lossparams=\"{config.lossparams}\" --trades_loss={config.trades_loss} " \
                     f"--trades_lossparams=\"{config.trades_lossparams}\" --robust_loss={config.robust_loss} " \
                     f"--robust_lossparams=\"{config.robust_lossparams}\" --mixup=\"{config.mixup}\" --cutmix=" \
                     f"\"{config.cutmix}\" --manifold=\"{config.manifold}\" --concurrent_combinations={config.concurrent_combinations}" \
@@ -46,7 +47,7 @@ if __name__ == '__main__':
                     f"{config.minibatchsize} --validonc={config.validonc} --validonadv={config.validonadv} --swa=" \
                     f"\"{config.swa}\" --noise_sparsity={config.noise_sparsity} --noise_patch_scale=" \
                     f"\"{config.noise_patch_scale}\" --generated_ratio={config.generated_ratio} " \
-                    f"--n2n_deepaugment={config.n2n_deepaugment} --grouped_stylization={grouped_stylization} " \
+                    f"--n2n_deepaugment={config.n2n_deepaugment} --stylization_first={stylization_first} " \
                     f"--kaggle={kaggle} "
             if experiment in []:
                 print('skip')

@@ -318,9 +318,7 @@ def _resnet(
     activation_function='relu',
     **kwargs: Any,
 ) -> ResNet:
-    if weights is not None:
-        _ovewrite_named_param(kwargs, "num_classes", len(weights.meta["categories"]))
-
+    
     model = ResNet(block=block, 
                    layers=layers, 
                    normalized=normalized, 
@@ -329,7 +327,19 @@ def _resnet(
                    **kwargs)
 
     if weights is not None:
-        model.load_state_dict(weights.get_state_dict(progress=progress, check_hash=True), strict=False)
+        num_classes = kwargs.get("num_classes", 1000)
+        weights_num_classes = len(weights.meta["categories"])        
+        state_dict = weights.get_state_dict(progress=progress, check_hash=True)
+        
+        #get rid of the classification head weights if number of classes does not match
+        if num_classes != weights_num_classes:
+            if "fc.weight" in state_dict:
+                del state_dict["fc.weight"]
+            if "fc.bias" in state_dict:
+                del state_dict["fc.bias"]
+
+        #strict=False ignores that classification head weights may be missing
+        model.load_state_dict(state_dict, strict=False)
 
     return model
 

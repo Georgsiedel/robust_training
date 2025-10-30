@@ -15,454 +15,69 @@ import time
 from experiments.utils import plot_images
 import experiments.style_transfer as style_transfer
 from experiments.custom_datasets import StylizedTensorDataset
-import torchvision.transforms as transforms
-import torchvision.transforms.v2 as transforms_v2
-
-
-def get_transforms_map(strat_name, re, dataset, factor, grouped=False, style_path="../data/style_feats_adain_1000.npy"):
-    transform_manager = TransformFactory(dataset, factor, re, style_path)
-    if grouped:
-        transf = transform_manager.get_transforms_grouped(strat_name)
-    else:
-        transf = transform_manager.get_transforms(strat_name)
-    return transf
 
 class TransformFactory:
-    def __init__(self, dataset, factor, re, style_path):
-        self.dataset = dataset
-        self.factor = factor
+    def __init__(self, re, style_path, strat_name, style, style_and_aug):
         self.re = re
         self.TAc = CustomTA_color()
         self.TAg = CustomTA_geometric()
+        self.strat_name = strat_name
+        self.style = style
+        self.style_and_aug = style_and_aug
         self.style_path = style_path
 
-    def _stylization(self, probability=0.95, alpha_min=0.2, alpha_max=1.0):
+    def _stylization(self, probability=1.0, alpha_min=0.2, alpha_max=1.0):
         vgg, decoder = style_transfer.load_models()
         style_feats = style_transfer.load_feat_files(self.style_path)
-        pixels = 224 if self.dataset in ['ImageNet', 'ImageNet-100'] else 32 * self.factor
-        return style_transfer.NSTTransform(style_feats, vgg, decoder, alpha_min=alpha_min, alpha_max=alpha_max, probability=probability, pixels=pixels)
+        return style_transfer.NSTTransform(style_feats, vgg, decoder, alpha_min=alpha_min, alpha_max=alpha_max, probability=probability)
 
-    def get_transforms_grouped(self, strat_name):
-        if strat_name == "StyleTransfer50alpha00":
-            return (BatchStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.0, alpha_max=0.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer50alpha02":
-            return (BatchStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.2, alpha_max=0.2)), self.re, self.re)
-        elif strat_name == "StyleTransfer50alpha04":
-            return (BatchStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.4, alpha_max=0.4)), self.re, self.re)
-        elif strat_name == "StyleTransfer50alpha06":
-            return (BatchStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.6, alpha_max=0.6)), self.re, self.re)
-        elif strat_name == "StyleTransfer50alpha08":
-            return (BatchStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.8, alpha_max=0.8)), self.re, self.re)
-        elif strat_name == "StyleTransfer50alpha10":
-            return (BatchStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=1.0, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer50alpha01-10":
-            return (BatchStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.1, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer50alpha05-10":
-            return (BatchStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer50alpha04-07":
-            return (BatchStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.4, alpha_max=0.7)), self.re, self.re)
-        elif strat_name == "StyleTransfer50alpha05-08":
-            return (BatchStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=0.8)), self.re, self.re)
-        elif strat_name == "StyleTransfer50alpha08-10":
-            return (BatchStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.8, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer100alpha10":
-            return (BatchStyleTransforms(stylized_ratio=1.0, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=1.0, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer90alpha10":
-            return (BatchStyleTransforms(stylized_ratio=0.9, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=1.0, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer80alpha10":
-            return (BatchStyleTransforms(stylized_ratio=0.8, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=1.0, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer70alpha10":
-            return (BatchStyleTransforms(stylized_ratio=0.7, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=1.0, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer60alpha10":
-            return (BatchStyleTransforms(stylized_ratio=0.6, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=1.0, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer40alpha10":
-            return (BatchStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=1.0, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer30alpha10":
-            return (BatchStyleTransforms(stylized_ratio=0.3, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=1.0, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer20alpha10":
-            return (BatchStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=1.0, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer10alpha10":
-            return (BatchStyleTransforms(stylized_ratio=0.1, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=1.0, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer100alpha05-08":
-            return (BatchStyleTransforms(stylized_ratio=1.0, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=0.8)), self.re, self.re)
-        elif strat_name == "StyleTransfer90alpha05-08":
-            return (BatchStyleTransforms(stylized_ratio=0.9, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=0.8)), self.re, self.re)
-        elif strat_name == "StyleTransfer80alpha05-08":
-            return BatchStyleTransforms(stylized_ratio=0.8, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=0.8)), self.re, self.re
-        elif strat_name == "StyleTransfer70alpha05-08":
-            return BatchStyleTransforms(stylized_ratio=0.7, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=0.8)), self.re, self.re
-        elif strat_name == "StyleTransfer60alpha05-08":
-            return BatchStyleTransforms(stylized_ratio=0.6, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=0.8)), self.re, self.re
-        elif strat_name == "StyleTransfer40alpha05-08":
-            return BatchStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=0.8)), self.re, self.re
-        elif strat_name == "StyleTransfer30alpha05-08":
-            return BatchStyleTransforms(stylized_ratio=0.3, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=0.8)), self.re, self.re
-        elif strat_name == "StyleTransfer20alpha05-08":
-            return BatchStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=0.8)), self.re, self.re
-        elif strat_name == "StyleTransfer10alpha05-08":
-            return BatchStyleTransforms(stylized_ratio=0.1, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=0.8)), self.re, self.re
-        elif strat_name == "StyleTransfer100alpha04-07":
-            return BatchStyleTransforms(stylized_ratio=1.0, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.4, alpha_max=0.7)), self.re, self.re
-        elif strat_name == "StyleTransfer90alpha04-07":
-            return BatchStyleTransforms(stylized_ratio=0.9, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.4, alpha_max=0.7)), self.re, self.re
-        elif strat_name == "StyleTransfer80alpha04-07":
-            return BatchStyleTransforms(stylized_ratio=0.8, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.4, alpha_max=0.7)), self.re, self.re
-        elif strat_name == "StyleTransfer70alpha04-07":
-            return BatchStyleTransforms(stylized_ratio=0.7, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.4, alpha_max=0.7)), self.re, self.re
-        elif strat_name == "StyleTransfer60alpha04-07":
-            return BatchStyleTransforms(stylized_ratio=0.6, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.4, alpha_max=0.7)), self.re, self.re
-        elif strat_name == "StyleTransfer40alpha04-07":
-            return BatchStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.4, alpha_max=0.7)), self.re, self.re
-        elif strat_name == "StyleTransfer30alpha04-07":
-            return BatchStyleTransforms(stylized_ratio=0.3, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.4, alpha_max=0.7)), self.re, self.re
-        elif strat_name == "StyleTransfer20alpha04-07":
-            return BatchStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.4, alpha_max=0.7)), self.re, self.re
-        elif strat_name == "StyleTransfer10alpha04-07":
-            return BatchStyleTransforms(stylized_ratio=0.1, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.4, alpha_max=0.7)), self.re, self.re
-        elif strat_name == "TAorStyle90alpha10":
-            return BatchStyleTransforms(stylized_ratio=0.9, batch_size=50, transform_style=self._stylization(probability=0.95, alpha_min=1.0, alpha_max=1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle80alpha10":
-            return BatchStyleTransforms(stylized_ratio=0.8, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle70alpha10":
-            return BatchStyleTransforms(stylized_ratio=0.7, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle60alpha10":
-            return BatchStyleTransforms(stylized_ratio=0.6, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle50alpha10":
-            return BatchStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle40alpha10":
-            return BatchStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle30alpha10":
-            return BatchStyleTransforms(stylized_ratio=0.3, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle20alpha10":
-            return BatchStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle10alpha10":
-            return BatchStyleTransforms(stylized_ratio=0.1, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle90alpha01-10":
-            return BatchStyleTransforms(stylized_ratio=0.9, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle80alpha01-10":
-            return BatchStyleTransforms(stylized_ratio=0.8, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle70alpha01-10":
-            return BatchStyleTransforms(stylized_ratio=0.7, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle60alpha01-10":
-            return BatchStyleTransforms(stylized_ratio=0.6, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle50alpha01-10":
-            return BatchStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle40alpha01-10":
-            return BatchStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle30alpha01-10":
-            return BatchStyleTransforms(stylized_ratio=0.3, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle20alpha01-10":
-            return BatchStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle10alpha01-10":
-            return BatchStyleTransforms(stylized_ratio=0.1, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle90alpha05-08":
-            return BatchStyleTransforms(stylized_ratio=0.9, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle80alpha05-08":
-            return BatchStyleTransforms(stylized_ratio=0.8, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle70alpha05-08":
-            return BatchStyleTransforms(stylized_ratio=0.7, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle60alpha05-08":
-            return BatchStyleTransforms(stylized_ratio=0.6, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle50alpha05-08":
-            return BatchStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle40alpha05-08":
-            return BatchStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle30alpha05-08":
-            return BatchStyleTransforms(stylized_ratio=0.3, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle20alpha05-08":
-            return BatchStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle10alpha05-08":
-            return BatchStyleTransforms(stylized_ratio=0.1, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle10alpha05-08":
-            return BatchStyleTransforms(stylized_ratio=0.1, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle20alpha05-08":
-            return BatchStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle30alpha05-08":
-            return BatchStyleTransforms(stylized_ratio=0.3, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle40alpha05-08":
-            return BatchStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle50alpha05-08":
-            return BatchStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle10alpha01-10":
-            return BatchStyleTransforms(stylized_ratio=0.1, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle20alpha01-10":
-            return BatchStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle30alpha01-10":
-            return BatchStyleTransforms(stylized_ratio=0.3, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle40alpha01-10":
-            return BatchStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle50alpha01-10":
-            return BatchStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle60alpha01-10":
-            return BatchStyleTransforms(stylized_ratio=0.6, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle70alpha01-10":
-            return BatchStyleTransforms(stylized_ratio=0.7, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle80alpha01-10":
-            return BatchStyleTransforms(stylized_ratio=0.8, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle90alpha01-10":
-            return BatchStyleTransforms(stylized_ratio=0.9, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle100alpha01-10":
-            return BatchStyleTransforms(stylized_ratio=1.0, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle10alpha10":
-            return BatchStyleTransforms(stylized_ratio=0.1, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle20alpha10":
-            return BatchStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle30alpha10":
-            return BatchStyleTransforms(stylized_ratio=0.3, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle40alpha10":
-            return BatchStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle50alpha10":
-            return BatchStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle60alpha10":
-            return BatchStyleTransforms(stylized_ratio=0.6, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle70alpha10":
-            return BatchStyleTransforms(stylized_ratio=0.7, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle80alpha10":
-            return BatchStyleTransforms(stylized_ratio=0.8, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle90alpha10":
-            return BatchStyleTransforms(stylized_ratio=0.9, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle100alpha10":
-            return BatchStyleTransforms(stylized_ratio=1.0, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "AugMixandStyle20alpha10":
-            return BatchStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.AugMix(), self.re]), transforms.Compose([transforms_v2.AugMix(), self.re])
-        elif strat_name == "AugMixandStyle30alpha10":
-            return BatchStyleTransforms(stylized_ratio=0.3, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.AugMix(), self.re]), transforms.Compose([transforms_v2.AugMix(), self.re])
-        elif strat_name == "AugMixandStyle40alpha1-10":
-            return BatchStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.AugMix(), self.re]), transforms.Compose([transforms_v2.AugMix(), self.re])
-        elif strat_name == "AugMixorStyle20alpha1-10":
-            return BatchStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.AugMix(), self.re])
-        elif strat_name == "AugMixorStyle40alpha1-10":
-            return BatchStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.AugMix(), self.re])
-        elif strat_name == "StyleorColorAndGeometricOrRE":
-            random_choice = RandomChoiceTransforms([self.TAg, transforms_v2.RandomErasing(p=1.0, scale=(0.02, 0.4), value='random'), transforms_v2.RandomErasing(p=1.0, scale=(0.02, 0.4), value=0)], [0.7, 0.15, 0.15])
-            combined_transform = transforms.Compose([self.TAc, random_choice])
-            return BatchStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(0.95, 0.5, 1.0)), random_choice, combined_transform
-        elif strat_name == "TAorRE":
-            return None, None, RandomChoiceTransforms([transforms_v2.TrivialAugmentWide(), transforms_v2.RandomErasing(p=1.0, scale=(0.02, 0.4), value='random'), transforms_v2.RandomErasing(p=1.0, scale=(0.02, 0.4), value=0)], [0.8, 0.1, 0.1])
-        elif strat_name == "TrivialAugmentWide":
-            return None, None, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "RandAugment":
-            return None, None, transforms.Compose([transforms_v2.RandAugment(), self.re])
-        elif strat_name == "AutoAugment":
-            return None, None, transforms.Compose([transforms_v2.AutoAugment(), self.re])
-        elif strat_name == "AugMix":
-            return None, None, transforms.Compose([transforms_v2.AugMix(), self.re])
-        elif strat_name == 'None':
-            return None, None, self.re
-        else:
-            print('Training augmentation strategy', strat_name, 'could not be found. Proceeding without augmentation strategy.')
-            return None, self.re, self.re
+    def get_transforms(self):
+        batch_transforms = BatchStyleTransforms(stylized_ratio=self.style['probability'], 
+                                           batch_size=100, 
+                                           transform_style=self._stylization(probability=1.0, 
+                                                                             alpha_min=self.style['alpha_min'], 
+                                                                             alpha_max=self.style['alpha_max']))
         
-    def get_transforms(self, strat_name):
-        if strat_name == "StyleTransfer50alpha00":
-            return (DatasetStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.0, alpha_max=0.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer50alpha02":
-            return (DatasetStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.2, alpha_max=0.2)), self.re, self.re)
-        elif strat_name == "StyleTransfer50alpha04":
-            return (DatasetStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.4, alpha_max=0.4)), self.re, self.re)
-        elif strat_name == "StyleTransfer50alpha06":
-            return (DatasetStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.6, alpha_max=0.6)), self.re, self.re)
-        elif strat_name == "StyleTransfer50alpha08":
-            return (DatasetStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.8, alpha_max=0.8)), self.re, self.re)
-        elif strat_name == "StyleTransfer50alpha10":
-            return (DatasetStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=1.0, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer50alpha01-10":
-            return (DatasetStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.1, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer50alpha05-10":
-            return (DatasetStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer50alpha04-07":
-            return (DatasetStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.4, alpha_max=0.7)), self.re, self.re)
-        elif strat_name == "StyleTransfer50alpha05-08":
-            return (DatasetStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=0.8)), self.re, self.re)
-        elif strat_name == "StyleTransfer50alpha08-10":
-            return (DatasetStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.8, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer100alpha10":
-            return (DatasetStyleTransforms(stylized_ratio=1.0, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=1.0, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer90alpha10":
-            return (DatasetStyleTransforms(stylized_ratio=0.9, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=1.0, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer80alpha10":
-            return (DatasetStyleTransforms(stylized_ratio=0.8, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=1.0, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer70alpha10":
-            return (DatasetStyleTransforms(stylized_ratio=0.7, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=1.0, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer60alpha10":
-            return (DatasetStyleTransforms(stylized_ratio=0.6, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=1.0, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer40alpha10":
-            return (DatasetStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=1.0, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer30alpha10":
-            return (DatasetStyleTransforms(stylized_ratio=0.3, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=1.0, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer20alpha10":
-            return (DatasetStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=1.0, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer10alpha10":
-            return (DatasetStyleTransforms(stylized_ratio=0.1, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=1.0, alpha_max=1.0)), self.re, self.re)
-        elif strat_name == "StyleTransfer100alpha05-08":
-            return (DatasetStyleTransforms(stylized_ratio=1.0, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=0.8)), self.re, self.re)
-        elif strat_name == "StyleTransfer90alpha05-08":
-            return (DatasetStyleTransforms(stylized_ratio=0.9, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=0.8)), self.re, self.re)
-        elif strat_name == "StyleTransfer80alpha05-08":
-            return DatasetStyleTransforms(stylized_ratio=0.8, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=0.8)), self.re, self.re
-        elif strat_name == "StyleTransfer70alpha05-08":
-            return DatasetStyleTransforms(stylized_ratio=0.7, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=0.8)), self.re, self.re
-        elif strat_name == "StyleTransfer60alpha05-08":
-            return DatasetStyleTransforms(stylized_ratio=0.6, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=0.8)), self.re, self.re
-        elif strat_name == "StyleTransfer40alpha05-08":
-            return DatasetStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=0.8)), self.re, self.re
-        elif strat_name == "StyleTransfer30alpha05-08":
-            return DatasetStyleTransforms(stylized_ratio=0.3, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=0.8)), self.re, self.re
-        elif strat_name == "StyleTransfer20alpha05-08":
-            return DatasetStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=0.8)), self.re, self.re
-        elif strat_name == "StyleTransfer10alpha05-08":
-            return DatasetStyleTransforms(stylized_ratio=0.1, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.5, alpha_max=0.8)), self.re, self.re
-        elif strat_name == "StyleTransfer100alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=1.0, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.1, alpha_max=1.0)), self.re, self.re
-        elif strat_name == "StyleTransfer90alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.9, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.1, alpha_max=1.0)), self.re, self.re
-        elif strat_name == "StyleTransfer80alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.8, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.1, alpha_max=1.0)), self.re, self.re
-        elif strat_name == "StyleTransfer70alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.7, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.1, alpha_max=1.0)), self.re, self.re
-        elif strat_name == "StyleTransfer60alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.6, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.1, alpha_max=1.0)), self.re, self.re
-        elif strat_name == "StyleTransfer40alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.1, alpha_max=1.0)), self.re, self.re
-        elif strat_name == "StyleTransfer30alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.3, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.1, alpha_max=1.0)), self.re, self.re
-        elif strat_name == "StyleTransfer20alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.1, alpha_max=1.0)), self.re, self.re
-        elif strat_name == "StyleTransfer10alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.1, batch_size=50, transform_style=self._stylization(probability=1.0, alpha_min=0.1, alpha_max=1.0)), self.re, self.re
-        elif strat_name == "TAorStyle90alpha10":
-            return DatasetStyleTransforms(stylized_ratio=0.9, batch_size=50, transform_style=self._stylization(probability=0.95, alpha_min=1.0, alpha_max=1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle80alpha10":
-            return DatasetStyleTransforms(stylized_ratio=0.8, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle70alpha10":
-            return DatasetStyleTransforms(stylized_ratio=0.7, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle60alpha10":
-            return DatasetStyleTransforms(stylized_ratio=0.6, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle50alpha10":
-            return DatasetStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle40alpha10":
-            return DatasetStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle30alpha10":
-            return DatasetStyleTransforms(stylized_ratio=0.3, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle20alpha10":
-            return DatasetStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle10alpha10":
-            return DatasetStyleTransforms(stylized_ratio=0.1, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle90alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.9, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle80alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.8, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle70alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.7, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle60alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.6, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle50alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle40alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle30alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.3, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle20alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle10alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.1, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle90alpha05-08":
-            return DatasetStyleTransforms(stylized_ratio=0.9, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle80alpha05-08":
-            return DatasetStyleTransforms(stylized_ratio=0.8, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle70alpha05-08":
-            return DatasetStyleTransforms(stylized_ratio=0.7, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle60alpha05-08":
-            return DatasetStyleTransforms(stylized_ratio=0.6, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle50alpha05-08":
-            return DatasetStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle40alpha05-08":
-            return DatasetStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle30alpha05-08":
-            return DatasetStyleTransforms(stylized_ratio=0.3, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle20alpha05-08":
-            return DatasetStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAorStyle10alpha05-08":
-            return DatasetStyleTransforms(stylized_ratio=0.1, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), self.re, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle10alpha05-08":
-            return DatasetStyleTransforms(stylized_ratio=0.1, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle20alpha05-08":
-            return DatasetStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle30alpha05-08":
-            return DatasetStyleTransforms(stylized_ratio=0.3, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle40alpha05-08":
-            return DatasetStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle50alpha05-08":
-            return DatasetStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(0.95, 0.5, 0.8)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle10alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.1, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle20alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle30alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.3, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle40alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle50alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle60alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.6, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle70alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.7, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle80alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.8, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle90alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.9, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle100alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=1.0, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle10alpha10":
-            return DatasetStyleTransforms(stylized_ratio=0.1, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle20alpha10":
-            return DatasetStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle30alpha10":
-            return DatasetStyleTransforms(stylized_ratio=0.3, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle40alpha10":
-            return DatasetStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle50alpha10":
-            return DatasetStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle60alpha10":
-            return DatasetStyleTransforms(stylized_ratio=0.6, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle70alpha10":
-            return DatasetStyleTransforms(stylized_ratio=0.7, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle80alpha10":
-            return DatasetStyleTransforms(stylized_ratio=0.8, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle90alpha10":
-            return DatasetStyleTransforms(stylized_ratio=0.9, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "TAandStyle100alpha10":
-            return DatasetStyleTransforms(stylized_ratio=1.0, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re]), transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "AugMixandStyle20alpha10":
-            return DatasetStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.AugMix(), self.re]), transforms.Compose([transforms_v2.AugMix(), self.re])
-        elif strat_name == "AugMixandStyle30alpha10":
-            return DatasetStyleTransforms(stylized_ratio=0.3, batch_size=50, transform_style=self._stylization(0.95, 1.0, 1.0)), transforms.Compose([transforms_v2.AugMix(), self.re]), transforms.Compose([transforms_v2.AugMix(), self.re])
-        elif strat_name == "AugMixandStyle40alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), transforms.Compose([transforms_v2.AugMix(), self.re]), transforms.Compose([transforms_v2.AugMix(), self.re])
-        elif strat_name == "AugMixorStyle20alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.2, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.AugMix(), self.re])
-        elif strat_name == "AugMixorStyle40alpha01-10":
-            return DatasetStyleTransforms(stylized_ratio=0.4, batch_size=50, transform_style=self._stylization(0.95, 0.1, 1.0)), self.re, transforms.Compose([transforms_v2.AugMix(), self.re])
-        elif strat_name == "StyleorColorAndGeometricOrRE":
-            random_choice = RandomChoiceTransforms([self.TAg, transforms_v2.RandomErasing(p=1.0, scale=(0.02, 0.4), value='random'), transforms_v2.RandomErasing(p=1.0, scale=(0.02, 0.4), value=0)], [0.7, 0.15, 0.15])
-            combined_transform = transforms.Compose([self.TAc, random_choice])
-            return DatasetStyleTransforms(stylized_ratio=0.5, batch_size=50, transform_style=self._stylization(0.95, 0.5, 1.0)), random_choice, combined_transform
-        elif strat_name == "TAorRE":
-            return None, None, RandomChoiceTransforms([transforms_v2.TrivialAugmentWide(), transforms_v2.RandomErasing(p=1.0, scale=(0.02, 0.4), value='random'), transforms_v2.RandomErasing(p=1.0, scale=(0.02, 0.4), value=0)], [0.8, 0.1, 0.1])
-        elif strat_name == "TrivialAugmentWide":
-            return None, None, transforms.Compose([transforms_v2.TrivialAugmentWide(), self.re])
-        elif strat_name == "RandAugment":
-            return None, None, transforms.Compose([transforms_v2.RandAugment(), self.re])
-        elif strat_name == "AutoAugment":
-            return None, None, transforms.Compose([transforms_v2.AutoAugment(), self.re])
-        elif strat_name == "AugMix":
-            return None, None, transforms.Compose([transforms_v2.AugMix(), self.re])
-        elif strat_name == 'None':
-            return None, None, self.re
+        if self.strat_name == 'None':
+            aug_class = None
         else:
-            print('Training augmentation strategy', strat_name, 'could not be found. Proceeding without augmentation strategy.')
-            return None, self.re, self.re
+            try:
+                aug_class = getattr(transforms_v2, self.strat_name)()
+            except AttributeError:
+                print(f"[Warning] Transform '{self.strat_name}' not found in transforms_v2. Skipping transform.")
+                aug_class = None
+                
+        if self.style_and_aug:
+            after_transforms = MaskIteratorTransforms(transforms_potentially_masked=aug_class, transforms_never_masked=self.re, filter_mask=False)
+        else:
+            after_transforms = MaskIteratorTransforms(transforms_potentially_masked=aug_class, transforms_never_masked=self.re, filter_mask=True)
+        
+        return batch_transforms, after_transforms
+        
+    def get_transforms_style_first(self):
+
+        batch_transforms = DatasetStyleTransforms(stylized_ratio=self.style['probability'], 
+                                           batch_size=100, 
+                                           transform_style=self._stylization(probability=1.0, 
+                                                                             alpha_min=self.style['alpha_min'], 
+                                                                             alpha_max=self.style['alpha_max']))
+        if self.strat_name == 'None':
+            aug_class = []
+        else:
+            try:
+                aug_class = getattr(transforms_v2, self.strat_name)()
+            except AttributeError:
+                print(f"[Warning] Transform '{self.strat_name}' not found in transforms_v2. Skipping transform.")
+                aug_class = []
+        
+        if self.style_and_aug:
+            after_style = transforms.Compose([aug_class, self.re])
+            after_nostyle = transforms.Compose([aug_class, self.re])
+        else:
+            after_style = transforms.Compose([self.re])
+            after_nostyle = transforms.Compose([aug_class, self.re])
+
+        return batch_transforms, after_style, after_nostyle
 
 
 class PilToNumpy(object):
@@ -775,6 +390,9 @@ class BatchStyleTransforms:
                 - A tensor batch of images where a fraction is stylized, with the same shape as input.
                 - A boolean list indicating which images were stylized.
         """
+        #if no images are to be stylized, return original images and all-false style mask
+        if self.stylized_ratio == 0.0:
+            return images, [False] * len(images)
 
         num_images = len(images)
         num_stylized = int(num_images * self.stylized_ratio)
@@ -822,21 +440,38 @@ class EmptyTransforms:
     def __call__(self, x):
         return x
 
-class StylizedChoiceTransforms:
-    def __init__(self, transforms, probabilities):
-        assert len(transforms) == len(probabilities) == 2, "The number of transforms and probabilities must be 2, one before Stylization and one without Stylization."
-        self.transforms = transforms
-        self.probabilities = probabilities
+class MaskIteratorTransforms:
+    # Gets a batch of images and a mask 
+    # if masked_only=True, applies the transforms only to the unmasked images (where mask==False)
+    # returns batch of images, no mask (inplace operation)
+    def __init__(self, transforms_potentially_masked, transforms_never_masked, filter_mask: bool):
+        self.transforms_never_masked = transforms_never_masked
+        self.filter_mask = filter_mask
 
-    def __call__(self, x):
-        choice = random.choices(list(self.transforms.items()), list(self.probabilities.values()))[0]
-        type, function = choice[0], choice[1]
-        if type == "before_stylization":
-            return function(x), True
-        elif type == "before_no_stylization":
-            return function(x), False
+        # Gracefully compose only non-None transforms
+        transform_list = [t for t in [transforms_potentially_masked, transforms_never_masked] if t is not None]
+        self.combined_transforms = transforms.Compose(transform_list) if transform_list else None
+
+    def __call__(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        # If no transforms are defined at all, just return x
+        if self.combined_transforms is None and self.transforms_never_masked is None:
+            return x
+
+        if self.filter_mask:
+            # Apply combined transforms only to unmasked images
+            if self.combined_transforms is not None:
+                x[~mask] = torch.stack([self.combined_transforms(img) for img in x[~mask]])
+
+            # Apply never-masked transforms only to masked images
+            if self.transforms_never_masked is not None:
+                x[mask] = torch.stack([self.transforms_never_masked(img) for img in x[mask]])
+
+            return x
         else:
-            raise ValueError("Invalid dict key for stylized choice transform.")
+            # Apply combined transforms to all images (if defined)
+            if self.combined_transforms is not None:
+                x = torch.stack([self.combined_transforms(img) for img in x])
+            return x
 
 class CustomTA_color(transforms_v2.TrivialAugmentWide):
     _AUGMENTATION_SPACE = {

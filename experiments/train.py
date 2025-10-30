@@ -67,6 +67,18 @@ parser.add_argument('--resize', type=utils.str2bool, nargs='?', const=False, def
                     help='Resize a model to 224x224 pixels, standard for models like transformers.')
 parser.add_argument('--train_aug_strat_orig', default='TrivialAugmentWide', type=str, help='augmentation scheme')
 parser.add_argument('--train_aug_strat_gen', default='TrivialAugmentWide', type=str, help='augmentation scheme')
+parser.add_argument('--style_orig', default={'probability': 0.0, 'alpha_min': 1.0, 'alpha_max': 1.0}, type=str,
+                    action=utils.str2dictAction, metavar='KEY=VALUE', help='parameters for stylization of generated '
+                    'images. 0.0 probability means no stylization.')
+parser.add_argument('--style_gen', default={'probability': 0.0, 'alpha_min': 1.0, 'alpha_max': 1.0}, type=str,
+                    action=utils.str2dictAction, metavar='KEY=VALUE', help='parameters for stylization of generated '
+                    'images. 0.0 probability means no stylization.')
+parser.add_argument('--style_and_aug_orig', type=utils.str2bool, nargs='?', const=False, default=True,
+                    help='Apply Stylization and main augmentation strategy sequentially to original images. If False, ' \
+                    'main augmentation only on images that are not stylized due to stylize probability.')
+parser.add_argument('--style_and_aug_gen', type=utils.str2bool, nargs='?', const=False, default=True,
+                    help='Apply Stylization and main augmentation strategy sequentially to generated images. If False, ' \
+                    'main augmentation only on images that are not stylized due to stylize probability.')
 parser.add_argument('--loss', default='CrossEntropyLoss', type=str, help='loss function to use, chosen from torch.nn loss functions')
 parser.add_argument('--lossparams', default={}, type=str, action=utils.str2dictAction, metavar='KEY=VALUE',
                     help='parameters for the standard loss function')
@@ -116,7 +128,7 @@ parser.add_argument('--generated_ratio', default=0.0, type=float, help='ratio of
                     'into every training batch')
 parser.add_argument('--n2n_deepaugment', type=utils.str2bool, nargs='?', const=False, default=False,
                     help='Whether to apply DeepAugment according to https://github.com/hendrycks/imagenet-r')
-parser.add_argument('--grouped_stylization', type=utils.str2bool, nargs='?', const=False, default=False,
+parser.add_argument('--stylization_first', type=utils.str2bool, nargs='?', const=False, default=False,
                     help='True: Stylization and caching of the next batch of images to be stylized upon dataset call. ' \
                     'False: Stylization of all images to be stylized this epoch before training. False is faster,' \
                     'but infeasible for large datasets as stylized subset needs to be fit into VRAM')
@@ -295,8 +307,10 @@ if __name__ == '__main__':
 
     lossparams = args.trades_lossparams | args.robust_lossparams | args.lossparams
     criterion = losses.Criterion(args.loss, trades_loss=args.trades_loss, robust_loss=args.robust_loss, **lossparams)
-    Dataloader = data.DataLoading(args.dataset, args.validontest, args.epochs, args.resize, args.run, args.number_workers, kaggle=args.kaggle)
-    Dataloader.create_transforms(args.train_aug_strat_orig, args.train_aug_strat_gen, args.RandomEraseProbability, args.grouped_stylization)
+    Dataloader = data.DataLoading(args.dataset, args.validontest, args.epochs, args.resize, args.run, args.number_workers, 
+                                  kaggle=args.kaggle)
+    Dataloader.create_transforms(args.train_aug_strat_orig, args.train_aug_strat_gen, args.style_orig, args.style_gen, 
+                                 args.style_and_aug_orig, args.style_and_aug_gen, args.RandomEraseProbability, args.stylization_first)
     Dataloader.load_base_data(test_only=False)
     testsets_c = Dataloader.load_data_c(subset=True, subsetsize=100, valid_run=True) if args.validonc else None
 
@@ -356,9 +370,8 @@ if __name__ == '__main__':
                                             generated_ratio=args.generated_ratio,
                                             epoch=start_epoch,
                                             robust_samples=criterion.robust_samples,
-                                            grouped_stylization=args.grouped_stylization)
-        trainloader, validationloader = Dataloader.get_loader(args.batchsize, 
-                                                              args.grouped_stylization)
+                                            stylization_first=args.stylization_first)
+        trainloader, validationloader = Dataloader.get_loader(args.batchsize)
 
         if style_dir := args.int_adain_params.get("style_dir", None):
             style_dataloader = Dataloader.load_style_dataloader(
@@ -371,7 +384,7 @@ if __name__ == '__main__':
         for epoch in range(start_epoch, end_epoch):
 
             #get new generated data sample in the trainset and reset the augmentation seed for corrupted data validation
-            trainloader = Dataloader.update_set(epoch, start_epoch, args.grouped_stylization)
+            trainloader = Dataloader.update_set(epoch, start_epoch, args.stylization_first)
 
             train_acc, train_loss = train_epoch(pbar)
             valid_acc, valid_loss, valid_acc_robust, valid_acc_adv = valid_epoch(pbar, model)

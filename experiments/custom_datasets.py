@@ -149,82 +149,93 @@ class SubsetWithTransform(Dataset):
 
 class HDF5ImageDataset(Dataset):
     """
-    Unified HDF5 dataset loader supporting:
-    - Custom ImageNet-style HDF5 (variable-size images stored as .npy bytes)
-    - PCAM HDF5 from torchvision (fixed-size 4D tensors)
-    
-    Args:
-        path (str): Path to HDF5 file.
-        split (str): For PCAM, "train", "val", or "test". Ignored for ImageNet.
-        transform (callable, optional): Transform applied to PIL Image.
-        format (str): Either "imagenet" or "pcam".
-    """
-    def __init__(self, path, split="train", transform=None, format="imagenet"):
-        self.path = path
-        self.split = split
-        self.transform = transform
-        self.format = format.lower()
-        self.file = None  # lazy-opened per worker
+    Minimal HDF5 dataset safe for all pickling situations.
 
-        # Determine dataset length without opening full file
-        with h5py.File(self.path, "r") as f:
-            if self.format == "imagenet":
-                self.length = len(f["labels"])
-                self.class_to_idx = json.loads(f.attrs.get("class_to_idx", "{}"))
-            elif self.format == "pcam":
-                key_img = f"camelyonpatch_level_2_split/{split}_images"
-                key_lbl = f"camelyonpatch_level_2_split/{split}_labels"
-                self.length = f[key_img].shape[0]
-                self.class_to_idx = None
-            else:
-                raise ValueError(f"Unknown format: {format}")
+    - path_images: HDF5 file with an 'images' dataset (or dataset name containing 'images').
+    - path_labels: optional HDF5 file; if omitted, 'labels' must be in path_images file.
+    - transform: any picklable transform (torchvision transforms are picklable).
+    """
+
+    def __init__(self, path_images, path_labels=None, transform=None):
+        self.path_images = path_images
+        self.path_labels = path_labels if path_labels else None
+        self.transform = transform
+
+        # These are file handles, but must not be present during pickling.
+        # They are intentionally initialized to None and opened lazily in __getitem__.
+        self._fh_img = None
+        self._fh_lbl = None
+
+        # Probe the image file once (open/close) to determine keys and length
+        if self.path_labels is None:
+            self._key_lbl = "labels"
+            self._key_img = "images"
+        else:
+            self._key_lbl = "y"
+            self._key_img = "x"
+        
+        with h5py.File(self.path_images, "r") as f:
+            self._length = f[self._key_img].shape[0]
 
     def __len__(self):
-        return self.length
+        return int(self._length)
 
     def __getitem__(self, idx):
-        # Lazy open file per worker (safe with num_workers>0)
-        if self.file is None:
-            self.file = h5py.File(self.path, "r")
+        # Lazy open per process/worker
+        if self._fh_img is None:
+            self._fh_img = h5py.File(self.path_images, "r")
+        if self.path_labels is not None and self._fh_lbl is None:
+            self._fh_lbl = h5py.File(self.path_labels, "r")
 
-        if self.format == "imagenet":
-            # variable-length .npy bytes per image
-            arr_uint8 = self.file["images"][idx]
-            img_bytes = arr_uint8.tobytes()
-            arr = np.load(io.BytesIO(img_bytes), allow_pickle=False)
-            img = Image.fromarray(arr, mode="RGB")
-            label = int(self.file["labels"][idx])
+        entry = self._fh_img[self._key_img][idx]
 
-        elif self.format == "pcam":
-            key_img = f"camelyonpatch_level_2_split/{self.split}_images"
-            key_lbl = f"camelyonpatch_level_2_split/{self.split}_labels"
-            arr = self.file[key_img][idx]           # shape=(3,H,W)
-            arr = np.transpose(arr, (1, 2, 0))     # CHW -> HWC
-            img = Image.fromarray(arr, mode="RGB")
-            label = int(self.file[key_lbl][idx])
-
+        # If stored as variable-length uint8 -> .npy bytes, decode. Else copy as numpy.
+        if entry.dtype == np.uint8 and entry.ndim == 1:
+            img = np.load(io.BytesIO(entry.tobytes()), allow_pickle=False)
         else:
-            raise ValueError(f"Unknown format: {self.format}")
+            img = np.array(entry)
 
-        if self.transform:
+        if self.path_labels is not None:
+            label = int(self._fh_lbl[self._key_lbl][idx])
+        else:
+            label = int(self._fh_img[self._key_lbl][idx])
+
+        if self.transform is not None:
             img = self.transform(img)
 
         return img, label
 
-    def __del__(self):
-        # Close file handle if open
-        try:
-            if self.file is not None:
-                self.file.close()
-        except Exception:
-            pass
+    # --- defensive pickling: remove any h5py objects before pickling ---
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        # wipe out any h5py objects to avoid pickling errors
+        def is_h5py_obj(x):
+            try:
+                import h5py as _h5
+                return isinstance(x, (_h5.File, _h5.Dataset, _h5.Group))
+            except Exception:
+                return False
+
+        for k, v in list(state.items()):
+            if is_h5py_obj(v):
+                state[k] = None
+        # also ensure file paths remain Path objects (they are picklable)
+        return state
+
+    def __setstate__(self, state):
+        # restore, file handles will be None until first access (in worker/main)
+        self.__dict__.update(state)
+        self._fh_img = None
+        self._fh_lbl = None
 
     def __del__(self):
-        try:
-            if self.file is not None:
-                self.file.close()
-        except Exception:
-            pass
+        for attr in ("_fh_img", "_fh_lbl"):
+            fh = getattr(self, attr, None)
+            try:
+                if fh is not None:
+                    fh.close()
+            except Exception:
+                pass
 
 class CustomDataset(Dataset):
     def __init__(self, np_images, testset, resize, preprocessing):
@@ -539,6 +550,55 @@ class AugmentedDataset(torch.utils.data.Dataset):
                 return (self.transforms_basic(x0), augment(x)), y
             elif self.robust_samples == 2:
                 return (self.transforms_basic(x0), augment(x), augment(x)), y
+
+    def __len__(self):
+        return self.total_size
+    
+class BasicAugmentedDataset(torch.utils.data.Dataset):
+    """Dataset wrapper to perform augmentations and allow robust loss functions."""
+
+    def __init__(self, original_dataset, generated_dataset, transforms_basic, robust_samples=0):
+        self.original_dataset = original_dataset
+        self.generated_dataset = generated_dataset
+        self.transforms_basic = transforms_basic
+        self.robust_samples = robust_samples
+
+        self.num_original = len(original_dataset) if original_dataset else 0
+        self.num_generated = len(generated_dataset) if generated_dataset else 0
+        self.total_size = self.num_original + self.num_generated
+    
+    def handle_label(self, y):
+        """
+        Handle label for both single-label and multi-label cases.
+        - If y is scalar-like -> return int(y)
+        - Else -> return float tensor
+        """
+        if torch.is_tensor(y):
+            if y.ndim == 0 or (y.ndim == 1 and y.numel() == 1):
+                # Single scalar tensor
+                return int(y.item())
+            else:
+                # Multi-label or continuous tensor
+                return y.to(torch.float32)
+        else:
+            # Non-tensor case (e.g., int from dataset)
+            return int(y)
+
+    def __getitem__(self, idx):
+
+        if idx < self.num_original:
+            x, y = self.original_dataset[idx]
+        else:
+            x, y = self.generated_dataset[idx - self.num_original]
+
+        y = self.handle_label(y)
+
+        if self.robust_samples == 0:
+            return self.transforms_basic(x), y
+        elif self.robust_samples == 1:
+            return (self.transforms_basic(x), self.transforms_basic(x)), y
+        elif self.robust_samples == 2:
+            return (self.transforms_basic(x), self.transforms_basic(x), self.transforms_basic(x)), y
 
     def __len__(self):
         return self.total_size
