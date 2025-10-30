@@ -63,12 +63,11 @@ class NSTTransform(transforms.Transform):
     randomize = randomly selected strength of alpha from a given range
     rand_min = Minimum value of alpha if randomized
     rand_max = Maximum value of alpha if randomized
-
-     """
+    """
 
     def __init__(self, style_feats, vgg, decoder,
                  alpha_min=1.0, alpha_max=1.0,
-                 probability=0.5, pixels=32):
+                 probability=0.5):
         super().__init__()
         self.vgg = vgg
         self.decoder = decoder

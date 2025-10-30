@@ -5,20 +5,17 @@ import json
 import gc
 
 import torch
-import torchvision.transforms as transforms
-import torchvision.transforms.v2 as transforms_v2
+import torchvision.transforms.v2 as transforms
 from sklearn.model_selection import train_test_split
 import torchvision
 from torch.utils.data import Subset, ConcatDataset, RandomSampler, BatchSampler, DataLoader, TensorDataset
 import numpy as np
-from PIL import Image
 from torchvision.datasets import ImageFolder
-from torchvision import transforms
 import experiments.custom_transforms as custom_transforms
 from run_0 import device
 from experiments.utils import plot_images, CsvHandler
-from experiments.custom_datasets import SubsetWithTransform, NumpyDataset, AugmentedDataset, ListDataset, CustomDataset 
-from experiments.custom_datasets import BalancedRatioSampler, GroupedAugmentedDataset, ReproducibleBalancedRatioSampler, StyleDataset
+from experiments.custom_datasets import SubsetWithTransform, NumpyDataset, AugmentedDataset, HDF5ImageDataset, CustomDataset 
+from experiments.custom_datasets import BalancedRatioSampler, BasicAugmentedDataset, ReproducibleBalancedRatioSampler, StyleDataset
 
 def normalization_values(batch, dataset, normalized, manifold=False, manifold_factor=1, verbose=False):
 
@@ -153,14 +150,21 @@ class DataLoading():
         self.style_feats_path = resolve_path("style_feats", suffix)
         self.write_data_path = resolve_path("write_data", suffix)
 
-    def create_transforms(self, train_aug_strat_orig, train_aug_strat_gen, RandomEraseProbability=0.0, 
-                          grouped_stylization=False):
+    def create_transforms(self, train_aug_strat_orig, train_aug_strat_gen, 
+                          style_orig={'probability': 0.0, 'alpha_min': 1.0, 'alpha_max': 1.0}, 
+                          style_gen={'probability': 0.0, 'alpha_min': 1.0, 'alpha_max': 1.0}, 
+                          style_and_aug_orig=True, style_and_aug_gen=True, 
+                          RandomEraseProbability=0.0, stylization_first=False):
         self.train_aug_strat_orig = train_aug_strat_orig
         self.train_aug_strat_gen = train_aug_strat_gen
-        self.grouped_stylization = grouped_stylization
+        self.style_orig = style_orig
+        self.style_gen = style_gen 
+        self.style_and_aug_orig = style_and_aug_orig,
+        self.style_and_aug_gen = style_and_aug_gen
+        self.stylization_first = stylization_first
         self.RandomEraseProbability = RandomEraseProbability
         # list of all data transformations used
-        t = transforms.ToTensor()
+        t = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)])
         c32 = transforms.RandomCrop(32, padding=4)
         c64 = transforms.RandomCrop(64, padding=8)
         c64_WM = transforms.RandomCrop(64, padding=6)
@@ -173,12 +177,13 @@ class DataLoading():
         r256 = transforms.Resize(256, antialias=True)
         cc224 = transforms.CenterCrop(224)
         rrc224 = transforms.RandomResizedCrop(224, antialias=True)
-        re = transforms.RandomErasing(p=self.RandomEraseProbability, scale=(0.02, 0.4)) #, value='random' --> normally distributed and out of bounds 0-1
+        re = transforms.RandomErasing(p=self.RandomEraseProbability, scale=(0.02, 0.4))
 
         # transformations of validation/test set and necessary transformations for training
         # always done (even for clean images while training, when using robust loss)
         if self.dataset in ['ImageNet', 'ImageNet-100']:
             self.transforms_preprocess = transforms.Compose([t])
+            self.transforms_preprocess_additional_train = transforms.Compose([rrc224])
             self.transforms_preprocess_additional_test = transforms.Compose([r256, cc224])
         elif self.dataset == 'GTSRB':
             self.transforms_preprocess = transforms.Compose([t, r32])
@@ -186,12 +191,13 @@ class DataLoading():
             #https://github.com/Junliangwangdhu/WaferMap/tree/master
             #preprocessing once upon load_base_data, not on the fly (small set fits in memory, lots of operations)
             self.transforms_preprocess = transforms.Compose([
-                #t,
-                #custom_transforms.ToFloat32(),
-                #custom_transforms.DivideBy2(),
-                #custom_transforms.ExpandGrayscaleTensorTo3Channels(), #directly converts to 3 channels
-                #c64_WM
+                t,
+                custom_transforms.ToFloat32(),
+                custom_transforms.DivideBy2(),
+                custom_transforms.ExpandGrayscaleTensorTo3Channels(), #directly converts to 3 channels
+                c64_WM
             ])
+            
         else:
             self.transforms_preprocess = transforms.Compose([t])
         
@@ -200,7 +206,7 @@ class DataLoading():
 
         # standard augmentations of training set, without tensor transformation
         if self.dataset in ['ImageNet', 'ImageNet-100']:
-            self.transforms_basic = transforms.Compose([flip, rrc224])
+            self.transforms_basic = transforms.Compose([flip])
         elif self.dataset in ['CIFAR10', 'CIFAR100', 'GTSRB']:
             self.transforms_basic = transforms.Compose([flip, c32])
         elif self.dataset in ['TinyImageNet', 'EuroSAT']:
@@ -213,48 +219,80 @@ class DataLoading():
         if self.resize == True and self.dataset not in ['ImageNet', 'ImageNet-100']:
             self.transforms_basic = transforms.Compose([flip, c224])
 
-        self.stylization_orig, self.transforms_orig_after_style, self.transforms_orig_after_nostyle = custom_transforms.get_transforms_map(train_aug_strat_orig, re, self.dataset, self.factor, grouped_stylization, self.style_feats_path)
-        self.stylization_gen, self.transforms_gen_after_style, self.transforms_gen_after_nostyle = custom_transforms.get_transforms_map(train_aug_strat_gen, re, self.dataset, self.factor, grouped_stylization, self.style_feats_path)
-
+        transform_manager_orig = custom_transforms.TransformFactory(re, self.style_feats_path, train_aug_strat_orig, 
+                                                                    style_orig, style_and_aug_orig)
+        transform_manager_gen = custom_transforms.TransformFactory(re, self.style_feats_path, train_aug_strat_gen, 
+                                                                    style_gen, style_and_aug_gen)
+        if stylization_first:
+            self.stylization_orig, self.transforms_orig_after_style, self.transforms_orig_after_nostyle = transform_manager_orig.get_transforms_style_first()
+            self.stylization_gen, self.transforms_gen_after_style, self.transforms_gen_after_nostyle = transform_manager_gen.get_transforms_style_first()
+        else:
+            self.stylization_orig, self.transforms_orig_after_style = transform_manager_orig.get_transforms()
+            self.stylization_gen, self.transforms_gen_after_style = transform_manager_gen.get_transforms()
+        
+        
     def update_transforms(self, stylize_prob_orig=None, stylize_prob_syn=None, alpha_min_orig=None, 
-                          alpha_min_syn=None, RandomEraseProbability=None):
+                          alpha_min_syn=None, style_and_aug_orig=None, style_and_aug_syn=None, RandomEraseProbability=None):
         
         if RandomEraseProbability is None:
             RandomEraseProbability = self.RandomEraseProbability
-        re = transforms.RandomErasing(p=RandomEraseProbability, scale=(0.02, 0.4)) #, value='random' --> normally distributed and out of bounds 0-1
-
-        self.stylization_orig, self.transforms_orig_after_style, self.transforms_orig_after_nostyle = custom_transforms.get_transforms_map(self.train_aug_strat_orig, re, self.dataset, self.factor, self.grouped_stylization, self.style_feats_path)
-        self.stylization_gen, self.transforms_gen_after_style, self.transforms_gen_after_nostyle = custom_transforms.get_transforms_map(self.train_aug_strat_gen, re, self.dataset, self.factor, self.grouped_stylization, self.style_feats_path)
+        re = transforms.RandomErasing(p=RandomEraseProbability, scale=(0.02, 0.4))
 
         if stylize_prob_orig is not None:
-            self.stylization_orig.stylized_ratio = stylize_prob_orig
+            self.style_orig['probability'] = stylize_prob_orig
         if stylize_prob_syn is not None:
-            self.stylization_gen.stylized_ratio = stylize_prob_syn
+            self.style_gen['probability'] = stylize_prob_syn
         if alpha_min_orig is not None:
-            self.stylization_orig.transform_style.alpha_min = alpha_min_orig
+            self.style_gen['alpha_min'] = alpha_min_orig
         if alpha_min_syn is not None:
-            self.stylization_gen.transform_style.alpha_min = alpha_min_syn
+            self.style_orig['alpha_min'] = alpha_min_syn
+        if style_and_aug_orig is not None:
+            self.style_and_aug_orig = style_and_aug_orig
+        if style_and_aug_syn is not None:
+            self.style_and_aug_gen = style_and_aug_syn
+
+        transform_manager_orig = custom_transforms.TransformFactory(re, self.style_feats_path, self.train_aug_strat_orig, 
+                                                                    self.style_orig, self.style_and_aug_orig)
+        transform_manager_gen = custom_transforms.TransformFactory(re, self.style_feats_path, self.train_aug_strat_gen, 
+                                                                    self.style_gen, self.style_and_aug_gen)
+        if self.stylization_first:
+            self.stylization_orig, self.transforms_orig_after_style, self.transforms_orig_after_nostyle = transform_manager_orig.get_transforms_style_first()
+            self.stylization_gen, self.transforms_gen_after_style, self.transforms_gen_after_nostyle = transform_manager_gen.get_transforms_style_first()
+        else:
+            self.stylization_orig, self.transforms_orig_after_style = transform_manager_orig.get_transforms()
+            self.stylization_gen, self.transforms_gen_after_style = transform_manager_gen.get_transforms()
     
     def load_base_data(self, test_only=False):
 
         if self.validontest:
 
-            if self.dataset in ['ImageNet', 'ImageNet-100']:
+            if self.dataset in ['ImageNet']:
                 self.testset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/val'),
                                                                 transform=transforms.Compose([self.transforms_preprocess, self.transforms_preprocess_additional_test]))
                 if test_only:
                     self.base_trainset = None
                 else:
                     self.base_trainset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/train'))
-            
-            elif self.dataset == 'TinyImageNet':
-                self.testset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/val'),
-                                                                transform=self.transforms_preprocess)
+            elif self.dataset in ['ImageNet-100']:
+                #self.testset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/val'),
+                #                                                transform=transforms.Compose([self.transforms_preprocess, self.transforms_preprocess_additional_test]))
+                self.testset = HDF5ImageDataset(f'{self.data_path}/{self.dataset}/ImageNet-100_val.h5',
+                                                transform=transforms.Compose([self.transforms_preprocess, self.transforms_preprocess_additional_test]))
                 if test_only:
                     self.base_trainset = None
                 else:
-                    self.base_trainset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/train'))
-
+                    #self.base_trainset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/train'))
+                    self.base_trainset = HDF5ImageDataset(f'{self.data_path}/{self.dataset}/ImageNet-100_train.h5')
+            elif self.dataset == 'TinyImageNet':
+                #self.testset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/val'),
+                #                                                transform=self.transforms_preprocess)
+                self.testset = HDF5ImageDataset(f'{self.data_path}/{self.dataset}/TinyImageNet_val.h5',
+                                                transform=transforms.Compose([self.transforms_preprocess]))
+                if test_only:
+                    self.base_trainset = None
+                else:
+                    #self.base_trainset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/train'))
+                    self.base_trainset = HDF5ImageDataset(f'{self.data_path}/{self.dataset}/TinyImageNet_train.h5')
             elif self.dataset in ['CIFAR10', 'CIFAR100']:
                 load_helper = getattr(torchvision.datasets, self.dataset)
                 self.testset = load_helper(root=os.path.abspath(f'{self.data_path}'), train=False, download=True,
@@ -274,13 +312,17 @@ class DataLoading():
                     self.base_trainset = load_helper(root=os.path.abspath(f'{self.data_path}'), split='train', download=True)
             elif self.dataset in ['PCAM']:               
                 
-                self.testset = ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/PCAM_test_images'), transform=self.transforms_preprocess)
-
+                self.testset = HDF5ImageDataset(f'{self.data_path}/{self.dataset.lower()}/camelyonpatch_level_2_split_test_x.h5',
+                                                f'{self.data_path}/{self.dataset.lower()}/camelyonpatch_level_2_split_test_y.h5',
+                                                transform=self.transforms_preprocess)
+                
                 if test_only:
                     self.base_trainset = None
                 else:
-                    valset = ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/PCAM_val_images'))
-                    trainset = ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/PCAM_train_images'))
+                    valset = HDF5ImageDataset(f'{self.data_path}/{self.dataset.lower()}/camelyonpatch_level_2_split_valid_x.h5',
+                                                f'{self.data_path}/{self.dataset.lower()}/camelyonpatch_level_2_split_valid_y.h5')
+                    trainset = HDF5ImageDataset(f'{self.data_path}/{self.dataset.lower()}/camelyonpatch_level_2_split_train_x.h5',
+                                                f'{self.data_path}/{self.dataset.lower()}/camelyonpatch_level_2_split_train_y.h5')
                     self.base_trainset = ConcatDataset([trainset, valset])
             
             elif self.dataset == 'EuroSAT':
@@ -301,7 +343,7 @@ class DataLoading():
                     self.base_trainset = None
                 else:
                     self.base_trainset = Subset(full_set, train_indices)
-                self.testset = SubsetWithTransform(Subset(full_set, val_indices), transforms.Compose([self.transforms_preprocess]))
+                self.testset = SubsetWithTransform(Subset(full_set, val_indices), self.transforms_preprocess)
                 
                 self.num_classes = extract_num_classes(self.testset, labels=all_labels)
                 return    
@@ -319,32 +361,28 @@ class DataLoading():
                 test_size=0.2,
                 random_state=0)
 
-                x_transform = transforms.Compose([transforms.ToTensor(),
-                                    custom_transforms.ToFloat32(),
-                                    custom_transforms.DivideBy2(),
-                                    custom_transforms.ExpandGrayscaleTensorTo3Channels(),
-                                    transforms.RandomCrop(64, padding=6)])
-
-                x_train = torch.stack([x_transform(img) for img in x_train])
-                x_test = torch.stack([x_transform(img) for img in x_test])
-                y_train = torch.from_numpy(y_train).float()
-                y_test = torch.from_numpy(y_test).float()
+                #x_train = torch.stack([self.transforms_preprocess(img) for img in x_train])
+                #x_test = torch.stack([self.transforms_preprocess(img) for img in x_test])
+                #y_train = torch.from_numpy(y_train).float()
+                #y_test = torch.from_numpy(y_test).float()
 
                 if test_only:
                     self.base_trainset = None
                 else:
-                    self.base_trainset = TensorDataset(x_train, y_train)
-                self.testset = TensorDataset(x_test, y_test) #transforms already done
+                    self.base_trainset = NumpyDataset(x_train, y_train)
+                self.testset = NumpyDataset(x_test, y_test, self.transforms_preprocess) #transforms already done
             
             else:
                 print('Dataset not loadable')
 
-            all_labels = extract_labels(self.testset)
-            self.num_classes = extract_num_classes(self.testset, labels=all_labels)
+            self.num_classes = extract_num_classes(self.testset)
 
         else:
-            if self.dataset in ['ImageNet', 'TinyImageNet', 'ImageNet-100']:
+            if self.dataset in ['ImageNet']:
                 base_trainset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/train'))
+            elif self.dataset in ['TinyImageNet', 'ImageNet-100']:
+                #base_trainset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/train'))
+                base_trainset = HDF5ImageDataset(f'{self.data_path}/{self.dataset}/{self.dataset}_train.h5')
             elif self.dataset in ['CIFAR10', 'CIFAR100']:
                 load_helper = getattr(torchvision.datasets, self.dataset)
                 base_trainset = load_helper(root=os.path.abspath(f'{self.data_path}'), train=True, download=True)
@@ -352,11 +390,13 @@ class DataLoading():
                 load_helper = getattr(torchvision.datasets, self.dataset)
                 base_trainset = load_helper(root=os.path.abspath(f'{self.data_path}'), split='train', download=True)
             elif self.dataset in ['PCAM']:
-                #Convert to ImageFolder from torchvision once, see above
-
-                self.base_trainset = ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/PCAM_train_images'))
-                self.testset = ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/PCAM_val_images'), transform=self.transforms_preprocess)
-
+                self.base_trainset = HDF5ImageDataset(f'{self.data_path}/{self.dataset.lower()}/camelyonpatch_level_2_split_train_x.h5',
+                                                f'{self.data_path}/{self.dataset.lower()}/camelyonpatch_level_2_split_train_y.h5')
+                
+                self.testset = HDF5ImageDataset(f'{self.data_path}/{self.dataset.lower()}/camelyonpatch_level_2_split_valid_x.h5',
+                                                f'{self.data_path}/{self.dataset.lower()}/camelyonpatch_level_2_split_valid_y.h5', 
+                                                transform=self.transforms_preprocess)
+                    
                 self.num_classes = len(self.base_trainset.classes)
                 return  #PCAM already features train/val split, so we can return
             
@@ -407,6 +447,7 @@ class DataLoading():
                 random_state=self.run)  # same validation split for same runs, but new validation on multiple runs
             
             if test_only == False:
+
                 self.base_trainset = Subset(base_trainset, train_indices)
 
             if self.dataset in ['ImageNet', 'ImageNet-100']:
@@ -422,7 +463,7 @@ class DataLoading():
         return style_loader
 
         
-    def load_augmented_traindata(self, target_size, generated_ratio, epoch=0, robust_samples=0, grouped_stylization=False):
+    def load_augmented_traindata(self, target_size, generated_ratio, epoch=0, robust_samples=0, stylization_first=False):
         self.robust_samples = robust_samples
         self.target_size = target_size
         try:
@@ -444,11 +485,15 @@ class DataLoading():
         self.num_generated = int(target_size * self.generated_ratio)
         self.num_original = target_size - self.num_generated
 
-        if grouped_stylization == False:
+        if stylization_first == True:
 
             if self.num_original > 0:
                 original_indices = torch.randperm(self.target_size)[:self.num_original]
-                original_subset = SubsetWithTransform(Subset(self.base_trainset, original_indices), self.transforms_preprocess)
+                if hasattr(self, "transforms_preprocess_additional_train"):
+                    original_subset = SubsetWithTransform(Subset(self.base_trainset, original_indices), 
+                                                          transforms.Compose([self.transforms_preprocess, self.transforms_preprocess_additional_train]))
+                else:
+                    original_subset = SubsetWithTransform(Subset(self.base_trainset, original_indices), self.transforms_preprocess)
 
                 if self.stylization_orig is not None:
                     stylized_original_subset, style_mask_orig = self.stylization_orig(original_subset)
@@ -482,7 +527,12 @@ class DataLoading():
         else:
             if self.num_original > 0:
                 original_indices = torch.randperm(len(self.base_trainset))[:self.num_original]
-                original_subset = SubsetWithTransform(Subset(self.base_trainset, original_indices), self.transforms_preprocess)
+                if hasattr(self, "transforms_preprocess_additional_train"):
+                    original_subset = SubsetWithTransform(Subset(self.base_trainset, original_indices), 
+                                                          transforms.Compose([self.transforms_preprocess, self.transforms_preprocess_additional_train]))
+                else:
+                    original_subset = SubsetWithTransform(Subset(self.base_trainset, original_indices), self.transforms_preprocess)
+
             else:
                 original_subset = None
             
@@ -497,9 +547,8 @@ class DataLoading():
             else:
                 generated_subset = None
             
-            self.trainset = GroupedAugmentedDataset(original_subset, generated_subset, self.transforms_basic, self.stylization_orig, 
-                                    self.stylization_gen, self.transforms_orig_after_style, self.transforms_gen_after_style, 
-                                    self.transforms_orig_after_nostyle, self.transforms_gen_after_nostyle, self.robust_samples, epoch)
+            self.trainset = BasicAugmentedDataset(stylized_original_subset, stylized_generated_subset, 
+                                                  self.transforms_basic, self.robust_samples)
     
     def precompute_and_append_c_data(self, set, c_datasets, corruption, csv_handler, subset, subsetsize, valid_run):
         random_corrupted_testset = SubsetWithTransform(self.testset, 
@@ -599,6 +648,7 @@ class DataLoading():
                     if subset == True:
                         selected_indices = np.random.choice(len(intensity_datasets[0]), subsetsize, replace=False)
                         intensity_datasets = [Subset(intensity_dataset, selected_indices) for intensity_dataset in intensity_datasets]
+                    
                     concat_intensities = ConcatDataset(intensity_datasets)
                     c_datasets.append(concat_intensities)
 
@@ -626,22 +676,18 @@ class DataLoading():
 
         return self.c_datasets_dict
 
-    def get_loader(self, batchsize, grouped_stylization=False):
+    def get_loader(self, batchsize):
 
         self.batchsize = batchsize
 
         g = torch.Generator()
         g.manual_seed(self.epoch + self.epochs * self.run)
 
-        if grouped_stylization == False:
-            if self.generated_ratio > 0.0:
-                self.CustomSampler = BalancedRatioSampler(self.trainset, generated_ratio=self.generated_ratio,
-                                                    batch_size=batchsize)
-            else:
-                self.CustomSampler = BatchSampler(RandomSampler(self.trainset), batch_size=batchsize, drop_last=False)            
+        if self.generated_ratio > 0.0:
+            self.CustomSampler = BalancedRatioSampler(self.trainset, generated_ratio=self.generated_ratio,
+                                                batch_size=batchsize)
         else:
-            self.CustomSampler = ReproducibleBalancedRatioSampler(self.trainset, generated_ratio=self.generated_ratio,
-                                                 batch_size=batchsize, epoch=self.epoch)
+            self.CustomSampler = BatchSampler(RandomSampler(self.trainset), batch_size=batchsize, drop_last=False)            
 
         self.trainloader = DataLoader(self.trainset, pin_memory=True, batch_sampler=self.CustomSampler,
                                     num_workers=self.number_workers, worker_init_fn=seed_worker, 
@@ -653,27 +699,24 @@ class DataLoading():
         return self.trainloader, self.testloader
     
 
-    def update_set(self, epoch, start_epoch, grouped_stylization=False, config=None):
+    def update_set(self, epoch, start_epoch, stylization_first=False, config=None):
         
         if config:
             self.update_transforms(stylize_prob_orig=config.get("stylize_prob_real", None), 
                             stylize_prob_syn=config.get("stylize_prob_synth", None), 
                             alpha_min_orig=config.get("alpha_min_real", None), 
-                            alpha_min_syn=config.get("alpha_min_synth", None), 
+                            alpha_min_syn=config.get("alpha_min_synth", None),
+                            style_and_aug_orig=config.get("style_and_aug_orig", None), 
+                            style_and_aug_syn=config.get("style_and_aug_synth", None), 
                             RandomEraseProbability=config.get('RandomEraseProbability', None))
+        
+            self.generated_ratio = config.get(["synth_ratio"], self.generated_ratio)
 
-        if grouped_stylization == False:
-            if ((self.generated_ratio != 0.0 or self.stylization_gen is not None or self.stylization_orig is not None) and epoch != 0 and epoch != start_epoch) or config is not None:
-                # This should be updated when config gives new transforms parameters, when there is generated data or when there is stylization
-                del self.trainset
+        if ((self.generated_ratio != 0.0 or self.stylization_gen is not None or self.stylization_orig is not None) and epoch != 0 and epoch != start_epoch) or config is not None:
+            # This should be updated when config gives new transforms parameters, when there is generated data or when there is stylization
+            del self.trainset
 
-                self.load_augmented_traindata(self.target_size, generated_ratio=self.generated_ratio, epoch=epoch, robust_samples=self.robust_samples, grouped_stylization=False)
-        else:    
-            if ((self.generated_ratio != 0.0) and epoch != 0 and epoch != start_epoch) or config is not None:
-                # This should be updated when config gives new transforms parameters, when there is generated data or when there is stylization
-                self.load_augmented_traindata(self.target_size, generated_ratio=config["synth_ratio"], epoch=epoch, robust_samples=self.robust_samples, grouped_stylization=True)
-            elif (self.stylization_gen is not None or self.stylization_orig is not None) and epoch != 0 and epoch != start_epoch:
-                self.trainset.set_epoch(epoch)
+            self.load_augmented_traindata(self.target_size, generated_ratio=self.generated_ratio, epoch=epoch, robust_samples=self.robust_samples, stylization_first=stylization_first)
 
         del self.trainloader
         gc.collect()

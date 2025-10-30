@@ -483,30 +483,28 @@ def _swin_transformer(
         stochastic_depth_prob=stochastic_depth_prob,
         dataset=dataset,
         normalized=normalized,
-        num_classes=weights_num_classes,
+        num_classes=num_classes,
         **kwargs,
     )
 
-    # if we load weights, but need a different number of classes to transfer, e.g. TinyImageNet
-    if weights_num_classes != num_classes:
-        #replace with new number of classes
-        model.head = nn.Linear(model.head.in_features, num_classes)
-        
-    if weights:     
-        # Load pretrained state dict and remove mismatched keys
+    if weights is not None:
+        weights_num_classes = len(weights.meta["categories"])        
         state_dict = weights.get_state_dict(progress=progress, check_hash=True)
+        
+        #get rid of the classification head weights if number of classes does not match
+        if num_classes != weights_num_classes:
+            if "head.weight" in state_dict:
+                del state_dict["head.weight"]
+            if "head.bias" in state_dict:
+                del state_dict["head.bias"]
 
-        if "head.weight" in state_dict:
-            del state_dict["head.weight"]
-        if "head.bias" in state_dict:
-            del state_dict["head.bias"]
-
-        # Load the modified state dict with strict=False
+        #strict=False ignores that classification head weights may be missing
         model.load_state_dict(state_dict, strict=False)
 
-        # Initialize the new head
-        nn.init.xavier_uniform_(model.head.weight)
-        nn.init.zeros_(model.head.bias)
+        if num_classes != weights_num_classes:
+            # Initialize the new head
+            nn.init.xavier_uniform_(model.head.weight)
+            nn.init.zeros_(model.head.bias)
 
     return model
 

@@ -121,15 +121,15 @@ class ResNet(ct_model.CtModel):
 
 
 def ResNet18(num_classes, dataset, normalized, factor, activation_function='relu'):
-    if dataset == 'ImageNet':
-        return in_resnet.resnet18(dataset=dataset, normalized=normalized, activation_function=activation_function)
+    if dataset in ['ImageNet', 'ImageNet-100']:
+        return in_resnet.resnet18(dataset=dataset, normalized=normalized, activation_function=activation_function, num_classes=num_classes)
     else:
         return ResNet(BasicBlock, [2, 2, 2, 2], num_classes=num_classes, dataset=dataset, normalized=normalized, factor=factor,
                   activation_function=activation_function)
     
 def PreActResNet18(num_classes, dataset, normalized, factor, activation_function='relu'):
-        if dataset == 'ImageNet':
-            return in_resnet.resnet18(weights=in_resnet.ResNet18_Weights.IMAGENET1K_V1, dataset=dataset, normalized=normalized, activation_function=activation_function)
+        if dataset in ['ImageNet', 'ImageNet-100']:
+            return in_resnet.resnet18(weights=in_resnet.ResNet18_Weights.IMAGENET1K_V1, dataset=dataset, normalized=normalized, activation_function=activation_function, num_classes=num_classes)
         else:
             print('not yet implemented')
 
@@ -138,15 +138,15 @@ def ResNet34(num_classes, dataset, normalized, factor, activation_function='relu
                   activation_function=activation_function)
 
 def ResNet50(num_classes, dataset, normalized, factor, activation_function='relu'):
-    if dataset == 'ImageNet':
-        return in_resnet.resnet50(dataset=dataset, normalized=normalized, activation_function=activation_function)
+    if dataset in ['ImageNet', 'ImageNet-100']:
+        return in_resnet.resnet50(dataset=dataset, normalized=normalized, activation_function=activation_function, num_classes=num_classes)
     else:
         return ResNet(Bottleneck, [3, 4, 6, 3], num_classes=num_classes, dataset=dataset, normalized=normalized, factor=factor,
                   activation_function=activation_function)
     
 def PreActResNet50(num_classes, dataset, normalized, factor, activation_function='relu'):
-        if dataset == 'ImageNet':
-            return in_resnet.resnet50(weights=in_resnet.ResNet50_Weights.IMAGENET1K_V2, dataset=dataset, normalized=normalized, activation_function=activation_function)
+        if dataset in ['ImageNet', 'ImageNet-100']:
+            return in_resnet.resnet50(weights=in_resnet.ResNet50_Weights.IMAGENET1K_V2, dataset=dataset, normalized=normalized, activation_function=activation_function, num_classes=num_classes)
         else:
             print('not yet implemented')
 
