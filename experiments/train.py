@@ -19,6 +19,7 @@ import time
 import random
 
 import data
+import torchvision
 import custom_datasets
 import utils
 import losses
@@ -154,6 +155,8 @@ configname = (f'experiments.configs.config{args.experiment}')
 config = importlib.import_module(configname)
 train_corruptions = config.train_corruptions
 
+TA = torchvision.transforms.v2.TrivialAugmentWide()
+
 def train_epoch(pbar):
 
     model.train()
@@ -167,8 +170,15 @@ def train_epoch(pbar):
         optimizer.zero_grad()
         if criterion.robust_samples >= 1:
             inputs = torch.cat(inputs, 0)
-        
+
         inputs, targets = inputs.to(device, dtype=torch.float32), targets.to(device)
+
+        # If not already applied, carry style and augmentation transforms during training here
+        if args.stylization_first == False:
+            inputs = torch.cat([TA(minibatch) for minibatch in torch.split(inputs, 8, dim=0)], dim=0)
+            
+            inputs = Dataloader.during_train_transform(inputs)
+        
         if style_dataloader:
             try:
                 style_feats = next(style_iter)

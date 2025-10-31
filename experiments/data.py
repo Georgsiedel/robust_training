@@ -15,7 +15,7 @@ import experiments.custom_transforms as custom_transforms
 from run_0 import device
 from experiments.utils import plot_images, CsvHandler
 from experiments.custom_datasets import SubsetWithTransform, NumpyDataset, AugmentedDataset, HDF5ImageDataset, CustomDataset 
-from experiments.custom_datasets import BalancedRatioSampler, BasicAugmentedDataset, ReproducibleBalancedRatioSampler, StyleDataset
+from experiments.custom_datasets import BalancedRatioSampler, BasicAugmentedDataset, StyleDataset
 
 def normalization_values(batch, dataset, normalized, manifold=False, manifold_factor=1, verbose=False):
 
@@ -546,9 +546,13 @@ class DataLoading():
                 )
             else:
                 generated_subset = None
+
+            self.during_train_transform = custom_transforms.DuringTrainingTransforms(generated_ratio, robust_samples, 
+                                                                                     self.stylization_orig, self.stylization_gen, 
+                                                                                     self.transforms_orig_after_style,
+                                                                                     self.transforms_gen_after_style)
             
-            self.trainset = BasicAugmentedDataset(stylized_original_subset, stylized_generated_subset, 
-                                                  self.transforms_basic, self.robust_samples)
+            self.trainset = BasicAugmentedDataset(original_subset, generated_subset, self.transforms_basic, self.robust_samples)
     
     def precompute_and_append_c_data(self, set, c_datasets, corruption, csv_handler, subset, subsetsize, valid_run):
         random_corrupted_testset = SubsetWithTransform(self.testset, 

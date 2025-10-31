@@ -444,9 +444,10 @@ class MaskIteratorTransforms:
     # Gets a batch of images and a mask 
     # if masked_only=True, applies the transforms only to the unmasked images (where mask==False)
     # returns batch of images, no mask (inplace operation)
-    def __init__(self, transforms_potentially_masked, transforms_never_masked, filter_mask: bool):
+    def __init__(self, transforms_potentially_masked, transforms_never_masked, filter_mask: bool, batchsize=8):
         self.transforms_never_masked = transforms_never_masked
         self.filter_mask = filter_mask
+        self.batchsize = batchsize
 
         # Gracefully compose only non-None transforms
         transform_list = [t for t in [transforms_potentially_masked, transforms_never_masked] if t is not None]
@@ -456,22 +457,83 @@ class MaskIteratorTransforms:
         # If no transforms are defined at all, just return x
         if self.combined_transforms is None and self.transforms_never_masked is None:
             return x
-
+        
         if self.filter_mask:
             # Apply combined transforms only to unmasked images
             if self.combined_transforms is not None:
-                x[~mask] = torch.stack([self.combined_transforms(img) for img in x[~mask]])
+                x[~mask] = torch.cat([self.combined_transforms(minibatch) for minibatch in torch.split(x[~mask], self.batchsize, dim=0)], dim=0)
 
             # Apply never-masked transforms only to masked images
             if self.transforms_never_masked is not None:
-                x[mask] = torch.stack([self.transforms_never_masked(img) for img in x[mask]])
+                x[mask] = torch.cat([self.transforms_never_masked(minibatch) for minibatch in torch.split(x[mask], self.batchsize, dim=0)], dim=0)
 
             return x
         else:
             # Apply combined transforms to all images (if defined)
             if self.combined_transforms is not None:
-                x = torch.stack([self.combined_transforms(img) for img in x])
+                x = torch.cat([self.combined_transforms(minibatch) for minibatch in torch.split(x, self.batchsize, dim=0)], dim=0)
             return x
+        
+class DuringTrainingTransforms:
+    def __init__(self, synthetic_ratio, robust_samples, transforms_orig_batch, transforms_gen_batch, transforms_orig_iter, transforms_gen_iter):
+        self.transforms_orig_batch = transforms_orig_batch
+        self.transforms_gen_batch = transforms_gen_batch
+        self.transforms_orig_iter = transforms_orig_iter
+        self.transforms_gen_iter = transforms_gen_iter
+        self.synthetic_ratio = synthetic_ratio
+        self.robust_samples = robust_samples
+
+    def __call__(self, x):
+        total = x.size(0)
+        synth_samples = int(total * self.synthetic_ratio)
+        # Clamp synth_samples to [0, total] to avoid overflows
+        synth_samples = max(0, min(synth_samples, total))
+
+        if self.robust_samples == 2:
+            subset1 = x[int(x.size(0) / 3):int(x.size(0) * 2 / 3)]
+            subset2 = x[int(x.size(0) * 2 / 3):]
+
+            #apply batched and iterative transforms
+            if self.synthetic_ratio > 0.0:
+                imgs, mask = self.transforms_gen_batch(subset1[-synth_samples:])
+                subset1[-synth_samples:] = self.transforms_gen_iter(imgs, mask)
+
+                imgs, mask = self.transforms_gen_batch(subset2[-synth_samples:])
+                subset2[-synth_samples:] = self.transforms_gen_iter(imgs, mask)
+
+            if self.synthetic_ratio < 1.0:
+                # (use len - synth_samples to avoid :-0 issue)
+                imgs, mask = self.transforms_orig_batch(subset1[: total - synth_samples])
+                subset1[: total - synth_samples] = self.transforms_orig_iter(imgs, mask)
+
+                imgs, mask = self.transforms_orig_batch(subset2[: total - synth_samples])
+                subset2[: total - synth_samples] = self.transforms_orig_iter(imgs, mask)
+
+            x[int(x.size(0) / 3):int(x.size(0) * 2 / 3)] = subset1
+            x[int(x.size(0) * 2 / 3):] = subset2
+
+        else:
+            
+            if self.robust_samples == 0:
+                subset = x
+            elif self.robust_samples == 1:
+                subset = x[int(x.size(0) / 2):]
+
+            #apply batched and iterative transforms
+            if self.synthetic_ratio > 0.0:
+                imgs, mask = self.transforms_gen_batch(subset[-synth_samples:])
+                subset[-synth_samples:] = self.transforms_gen_iter(imgs, mask)
+            if self.synthetic_ratio < 1.0:
+                # (use len - synth_samples to avoid :-0 issue)
+                imgs, mask = self.transforms_orig_batch(subset[: total - synth_samples])
+                subset[: total - synth_samples] = self.transforms_orig_iter(imgs, mask)
+
+            if self.robust_samples == 0:
+                x = subset
+            elif self.robust_samples == 1:
+                x[int(x.size(0) / 2):] = subset
+
+        return x
 
 class CustomTA_color(transforms_v2.TrivialAugmentWide):
     _AUGMENTATION_SPACE = {

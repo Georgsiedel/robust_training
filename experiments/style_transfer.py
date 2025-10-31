@@ -89,6 +89,8 @@ class NSTTransform(transforms.Transform):
         if single_image:
             x = x.unsqueeze(0)  # [C,H,W] → [1,C,H,W]
 
+        ex_device = x.device
+
         batchsize = x.size(0)
         ratio = int(math.floor(batchsize * self.probability + random.random()))
         if ratio == 0:
@@ -112,7 +114,7 @@ class NSTTransform(transforms.Transform):
 
         x_selected = x_selected.to(nst_device)
         x_selected = self.style_transfer(self.vgg, self.decoder, x_selected, self.style_features[idy])
-        x_selected = x_selected.cpu()
+        x_selected = x_selected.to(ex_device)
 
         if (H, W) != (224, 224):
             x_selected = nn.Upsample(size=(H, W), mode='bilinear', align_corners=False)(x_selected)
