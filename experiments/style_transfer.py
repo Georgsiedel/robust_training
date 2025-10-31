@@ -96,18 +96,18 @@ class NSTTransform(transforms.Transform):
         if ratio == 0:
             return x.squeeze(0) if single_image else x
 
-        # Detect grayscale
-        was_grayscale = x.shape[1] == 1
-        if was_grayscale:
-            # Repeat channel → RGB
-            x = x.repeat(1, 3, 1, 1)
-        
         # Choose random subset to stylize
         idy = torch.randperm(self.num_styles)[:ratio]
         idx = torch.randperm(batchsize)[:ratio]
 
         x_selected = x[idx]
 
+        # Detect grayscale
+        was_grayscale = x_selected.shape[1] == 1
+        if was_grayscale:
+            # Repeat channel → RGB
+            x_selected = x_selected.repeat(1, 3, 1, 1)
+    
         _, _, H, W = x.shape
         if (H, W) != (224, 224):
             x_selected = self.upsample(x_selected)
@@ -119,14 +119,14 @@ class NSTTransform(transforms.Transform):
         if (H, W) != (224, 224):
             x_selected = nn.Upsample(size=(H, W), mode='bilinear', align_corners=False)(x_selected)
 
+        # Convert back to grayscale if needed
+        if was_grayscale:
+            x_selected = F.rgb_to_grayscale(x_selected)
+
         x[idx] = x_selected
 
         #normalized tensor, does not appear necessary in practice
         #stl_imgs = self.norm_style_tensor(stl_imgs)
-
-        # Convert back to grayscale if needed
-        if was_grayscale:
-            x = F.rgb_to_grayscale(x)
 
         if single_image:
             x = x.squeeze(0)  # Back to [C,H,W]

@@ -156,10 +156,12 @@ class HDF5ImageDataset(Dataset):
     - transform: any picklable transform (torchvision transforms are picklable).
     """
 
-    def __init__(self, path_images, path_labels=None, transform=None):
+    def __init__(self, path_images, path_labels=None, transform=None,
+                 convert_to_pil: bool = True):
         self.path_images = path_images
         self.path_labels = path_labels if path_labels else None
         self.transform = transform
+        self.convert_to_pil = convert_to_pil
 
         # These are file handles, but must not be present during pickling.
         # They are intentionally initialized to None and opened lazily in __getitem__.
@@ -199,6 +201,15 @@ class HDF5ImageDataset(Dataset):
             label = int(self._fh_lbl[self._key_lbl][idx])
         else:
             label = int(self._fh_img[self._key_lbl][idx])
+
+        # Optionally convert to PIL Image if transform expects it (ImageFolder-style)
+        if self.convert_to_pil and isinstance(img_np, np.ndarray):
+            # ensure uint8
+            if img_np.dtype != np.uint8:
+                img_np = img_np.astype(np.uint8)
+            img = Image.fromarray(img_np)
+        else:
+            img = img_np
 
         if self.transform is not None:
             img = self.transform(img)
