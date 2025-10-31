@@ -64,11 +64,6 @@ def find_all_image_files(root: Path, exts: Tuple[str, ...]=(".tif", ".tiff")):
             for p in sorted(class_dir.rglob(f"*{ext}")):
                 files.append(p)
                 labels.append(class_to_idx[c])
-        # also catch upper-case extensions
-        for ext in exts:
-            for p in sorted(class_dir.rglob(f"*{ext.upper()}")):
-                files.append(p)
-                labels.append(class_to_idx[c])
     # ensure stable order
     paired = sorted(zip(files, labels), key=lambda x: str(x[0]))
     files, labels = zip(*paired) if paired else ([], [])
@@ -179,9 +174,9 @@ if __name__ == "__main__":
     ap.add_argument("--src", default="../data/TreeSAT", help="root (class subfolders).")
     ap.add_argument("--train-list", default="../data/TreeSAT/train_filenames.lst", help="Path to train_filenames.lst (relative paths or basenames). Optional.")
     ap.add_argument("--test-list", default="../data/TreeSAT/test_filenames.lst", help="Path to test_filenames.lst (relative paths or basenames). Optional.")
-    ap.add_argument("--out-train", default="train.h5", help="Output HDF5 path for train split.")
-    ap.add_argument("--out-test", default="test.h5", help="Output HDF5 path for test split.")
+    ap.add_argument("--out-train", default="../data/TreeSAT/train.h5", help="Output HDF5 path for train split.")
+    ap.add_argument("--out-test", default="../data/TreeSAT/test.h5", help="Output HDF5 path for test split.")
     ap.add_argument("--compression", action="store_true", help="Use LZF compression for the dataset (fast).")
-    ap.add_argument("--ext", default=".tif,.tiff", help="Comma-separated extensions to include (default '.tif,.tiff').")
+    ap.add_argument("--ext", default=".tif", help="Comma-separated extensions to include (default '.tif,.tiff').")
     args = ap.parse_args()
     main(args)
