@@ -33,6 +33,9 @@ def find_image_files(root):
         for p in sorted(class_dir.glob("*.jpeg")):
             files.append(p)
             labels.append(class_to_idx[c])
+        for p in sorted(class_dir.glob("*.png")):
+            files.append(p)
+            labels.append(class_to_idx[c])
     return files, labels, class_to_idx
 
 def image_to_npy_bytes(path):
@@ -75,8 +78,8 @@ def main(args):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--src", default="../data/casting_product_quality_data/test", help="ImageFolder root")
-    ap.add_argument("--out", default="../data/casting_product_quality_data/casting_product_quality_data_test.h5", help="Output HDF5 file path")
+    ap.add_argument("--src", default="../data/KITTI_RoadLane/train", help="ImageFolder root")
+    ap.add_argument("--out", default="../data/KITTI_RoadLane/KITTI_RoadLane_train.h5", help="Output HDF5 file path")
     ap.add_argument("--compression", action="store_true", help="Use LZF compression for the dataset (fast).")
     args = ap.parse_args()
     main(args)

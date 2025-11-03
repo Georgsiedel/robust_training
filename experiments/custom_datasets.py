@@ -198,9 +198,21 @@ class HDF5ImageDataset(Dataset):
             img = np.array(entry)
 
         if self.path_labels is not None:
-            label = int(self._fh_lbl[self._key_lbl][idx])
+            lbl_entry = self._fh_lbl[self._key_lbl][idx]
         else:
-            label = int(self._fh_img[self._key_lbl][idx])
+            lbl_entry = self._fh_img[self._key_lbl][idx]
+        
+        # Handle label for both single-label and multi-label cases.
+        if isinstance(lbl_entry, np.ndarray) and lbl_entry.ndim == 0:
+            label = int(lbl_entry.item())
+        elif isinstance(lbl_entry, np.ndarray) and lbl_entry.ndim >= 1:
+            label = torch.from_numpy(lbl_entry.astype(np.float32))
+        else: # h5py may return numpy scalar types (e.g. np.int32) for scalars
+            arr = np.array(lbl_entry)
+            if arr.ndim == 0:
+                label = int(arr.item())
+            else:
+                label = torch.from_numpy(arr.astype(np.float32))
 
         # Optionally convert to PIL Image if transform expects it (ImageFolder-style)
         if self.convert_to_pil and isinstance(img_np, np.ndarray):
