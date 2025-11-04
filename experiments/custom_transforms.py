@@ -17,7 +17,7 @@ import experiments.style_transfer as style_transfer
 from experiments.custom_datasets import StylizedTensorDataset
 
 class TransformFactory:
-    def __init__(self, re, style_path, strat_name, style, style_and_aug):
+    def __init__(self, re, style_path, strat_name, style, style_and_aug, minibatchsize=8):
         self.re = re
         self.TAc = CustomTA_color()
         self.TAg = CustomTA_geometric()
@@ -25,6 +25,7 @@ class TransformFactory:
         self.style = style
         self.style_and_aug = style_and_aug
         self.style_path = style_path
+        self.minibatchsize = minibatchsize
 
     def _stylization(self, probability=1.0, alpha_min=0.2, alpha_max=1.0):
         vgg, decoder = style_transfer.load_models()
@@ -48,9 +49,11 @@ class TransformFactory:
                 aug_class = None
                 
         if self.style_and_aug:
-            after_transforms = MaskIteratorTransforms(transforms_potentially_masked=aug_class, transforms_never_masked=self.re, filter_mask=False)
+            after_transforms = MaskIteratorTransforms(transforms_potentially_masked=aug_class, transforms_never_masked=self.re, 
+                                                      filter_mask=False, batchsize=self.minibatchsize)
         else:
-            after_transforms = MaskIteratorTransforms(transforms_potentially_masked=aug_class, transforms_never_masked=self.re, filter_mask=True)
+            after_transforms = MaskIteratorTransforms(transforms_potentially_masked=aug_class, transforms_never_masked=self.re, 
+                                                      filter_mask=True, batchsize=self.minibatchsize)
         
         return batch_transforms, after_transforms
         
@@ -144,8 +147,10 @@ class DivideBy2:
         return x / 2.0
     
 def build_transform_c_bar(name, severity, dataset, resize):
-    assert dataset in ['CIFAR10', 'CIFAR100', 'ImageNet', 'ImageNet-100', 'TinyImageNet', 'GTSRB', 'PCAM', 'EuroSAT', 'WaferMap'],\
-            "Dataset not defined for c-bar benchmark."
+    assert dataset in ['CIFAR10', 'CIFAR100', 'ImageNet', 'ImageNet-100', 'TinyImageNet', 'GTSRB', 'PCAM', 
+                       'EuroSAT', 'WaferMap', 'Casting-Product-Quality', 'Describable-Textures', 'Flickr-Material', 
+                       'TreeSAT', 'KITTI_Distance_Multiclass', 'KITTI_RoadLane'],\
+            "Dataset not defined and functionality not explored for c-bar benchmark."
     
     if dataset in ['CIFAR10', 'CIFAR100', 'GTSRB']: 
         im_size = 32
@@ -153,6 +158,8 @@ def build_transform_c_bar(name, severity, dataset, resize):
         im_size = 64
     elif dataset in ['PCAM']:
         im_size = 96
+    elif dataset in ['KITTI_Distance_Multiclass', 'KITTI_RoadLane']:
+        im_size = 384
     else:
         im_size = 224
 
@@ -182,7 +189,6 @@ def build_transform_c_bar(name, severity, dataset, resize):
     transform_c_bar_dict = {t.name : t for t in transform_c_bar_list}
     
     return transform_c_bar_dict[name](severity=severity, im_size=im_size)
-
 
 def transform_c(image, severity=1, corruption_name=None, corruption_number=-1):
     """This function returns a corrupted version of the given image.

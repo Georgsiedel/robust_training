@@ -17,8 +17,8 @@ services:
       LD_LIBRARY_PATH: "/usr/local/lib:/usr/lib:/lib:$LD_LIBRARY_PATH"
     volumes:
       - /data/siedel/datasets:/data
-      - /home/siedel/data/ImageNet:/data/ImageNet
-      - /home/siedel/data/TinyImageNet:/data/TinyImageNet
+      #- /home/siedel/data/ImageNet:/data/ImageNet
+      #- /home/siedel/data/TinyImageNet:/data/TinyImageNet
       - /home/siedel/trained_models:/trained_models
       - ./results:/workspace/results
       - ./experiments/configs:/workspace/experiments/configs

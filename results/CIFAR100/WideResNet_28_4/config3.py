@@ -14,7 +14,7 @@ combine_train_corruptions = True #augment the train dataset with all corruptions
 concurrent_combinations = 1 #only has an effect if combine_train_corruption is True
 
 batchsize = 256
-minibatchsize = 8
+minibatchsize = 1
 dataset = 'CIFAR100' #ImageNet #CIFAR100 #CIFAR10 #TinyImageNet
 generated_ratio = 0.0
 normalize = True

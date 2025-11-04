@@ -14,7 +14,7 @@ combine_train_corruptions = True #augment the train dataset with all corruptions
 concurrent_combinations = 1 #only has an effect if combine_train_corruption is True
 
 batchsize = 256
-minibatchsize = 8
+minibatchsize = 1
 dataset = 'CIFAR100' #ImageNet #CIFAR100 #CIFAR10 #TinyImageNet
 generated_ratio = 0.0
 normalize = True
@@ -36,7 +36,7 @@ modelparams = {'dropout_rate': 0.2, 'activation_function': 'silu'}
 resize = False
 style_orig = {'probability': 0.2, 'alpha_min': 1.0, 'alpha_max': 1.0}
 style_gen = {'probability': 0.2, 'alpha_min': 0.1, 'alpha_max': 1.0}
-train_aug_strat_orig = 'None' #TrivialAugmentWide, RandAugment, AutoAugment, AugMix
+train_aug_strat_orig = 'TrivialAugmentWide' #TrivialAugmentWide, RandAugment, AutoAugment, AugMix
 train_aug_strat_gen = 'None' #TrivialAugmentWide, RandAugment, AutoAugment, AugMix
 style_and_aug_orig = True
 style_and_aug_gen = False

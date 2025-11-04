@@ -215,13 +215,13 @@ class HDF5ImageDataset(Dataset):
                 label = torch.from_numpy(arr.astype(np.float32))
 
         # Optionally convert to PIL Image if transform expects it (ImageFolder-style)
-        if self.convert_to_pil and isinstance(img_np, np.ndarray):
+        if self.convert_to_pil and isinstance(img, np.ndarray):
             # ensure uint8
-            if img_np.dtype != np.uint8:
-                img_np = img_np.astype(np.uint8)
-            img = Image.fromarray(img_np)
+            if img.dtype != np.uint8:
+                img = img.astype(np.uint8)
+            img = Image.fromarray(img)
         else:
-            img = img_np
+            img = img
 
         if self.transform is not None:
             img = self.transform(img)

@@ -175,8 +175,6 @@ def train_epoch(pbar):
 
         # If not already applied, carry style and augmentation transforms during training here
         if args.stylization_first == False:
-            inputs = torch.cat([TA(minibatch) for minibatch in torch.split(inputs, 8, dim=0)], dim=0)
-            
             inputs = Dataloader.during_train_transform(inputs)
         
         if style_dataloader:
@@ -227,7 +225,7 @@ def train_epoch(pbar):
 
         _, predicted = outputs.max(1)
         
-        if args.dataset in ['WaferMap']:
+        if args.dataset in ['WaferMap', 'KITTI_Distance_Multiclass']:
             predicted = (outputs > 0.5).float()    
             mixed_targets = (mixed_targets > 0.5).float()   
         elif np.ndim(mixed_targets) == 2:    
@@ -237,7 +235,7 @@ def train_epoch(pbar):
             mixed_targets = torch.cat([mixed_targets] * (criterion.robust_samples+1), 0)
 
         total += mixed_targets.size(0)
-        if args.dataset in ['WaferMap']:
+        if args.dataset in ['WaferMap', 'KITTI_Distance_Multiclass']:
                 matches = predicted.eq(targets)  # shape: [batch_size, num_labels]
                 exact_match = matches.all(dim=1)  # shape: [batch_size], bool tensor
                 correct += exact_match.sum().item()
@@ -274,13 +272,13 @@ def valid_epoch(pbar, net):
 
             test_loss += loss.item()
 
-            if args.dataset in ['WaferMap']:
+            if args.dataset in ['WaferMap', 'KITTI_Distance_Multiclass']:
                 predicted = (outputs > 0.5).float()    
             else:
                 _, predicted = outputs.max(1)
 
             total += targets.size(0)
-            if args.dataset in ['WaferMap']:
+            if args.dataset in ['WaferMap', 'KITTI_Distance_Multiclass']:
                 matches = predicted.eq(targets)  # shape: [batch_size, num_labels]
                 exact_match = matches.all(dim=1)  # shape: [batch_size], bool tensor
                 correct += exact_match.sum().item()
@@ -303,6 +301,14 @@ def valid_epoch(pbar, net):
     adv_acc = 100. * adv_correct / total
     return acc, avg_test_loss, acc_c, adv_acc
 
+def update_bn_with_aug(dataloader, model, augment_fn, batchsize):
+    model.train()
+    dataloader.batch_sampler.batch_size = batchsize
+    for inputs, _ in dataloader:
+        inputs = inputs.to(device)
+        inputs = augment_fn(inputs)
+        model(inputs)
+
 if __name__ == '__main__':
     # Load and transform data
     print('Preparing data..')
@@ -320,9 +326,10 @@ if __name__ == '__main__':
     Dataloader = data.DataLoading(args.dataset, args.validontest, args.epochs, args.resize, args.run, args.number_workers, 
                                   kaggle=args.kaggle)
     Dataloader.create_transforms(args.train_aug_strat_orig, args.train_aug_strat_gen, args.style_orig, args.style_gen, 
-                                 args.style_and_aug_orig, args.style_and_aug_gen, args.RandomEraseProbability, args.stylization_first)
+                                 args.style_and_aug_orig, args.style_and_aug_gen, args.RandomEraseProbability, 
+                                 args.stylization_first, args.minibatchsize)
     Dataloader.load_base_data(test_only=False)
-    testsets_c = Dataloader.load_data_c(subset=True, subsetsize=100, valid_run=True) if args.validonc else None
+    testsets_c = Dataloader.load_data_c(subset=True, subsetsize=min(200, int(len(Dataloader.testset)/10)), valid_run=True) if args.validonc else None
 
     # Construct model
     print(f'\nBuilding {args.modeltype} model with {args.modelparams} | Loss Function: {args.loss}, Stability Loss: {args.robust_loss}, Trades Loss: {args.trades_loss}')
@@ -423,11 +430,14 @@ if __name__ == '__main__':
 
     # Save final model
     if args.swa['apply'] == True:
-        print('Saving final SWA model')
+        print("Saving final SWA model, one more forward pass to update its BN stats with augmented data from outside the dataloader")
         if criterion.robust_samples >= 1:
             SWA_Loader = custom_datasets.SwaLoader(trainloader, args.batchsize, criterion.robust_samples)
             trainloader = SWA_Loader.get_swa_dataloader()
-        torch.optim.swa_utils.update_bn(trainloader, swa_model, device)
+        
+        #Custom batchnorm update when we do augmentations in the train loop instead of in the dataloader 
+        update_bn_with_aug(trainloader, swa_model, Dataloader.during_train_transform, 32)
+        #torch.optim.swa_utils.update_bn(trainloader, swa_model, device)
         model = swa_model
 
     Checkpointer.save_final_model(model, optimizer, scheduler, end_epoch)

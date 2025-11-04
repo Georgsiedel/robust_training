@@ -253,7 +253,7 @@ def train_epoch(model, trainloader, optimizer, criterion, Scaler, Dataloader, st
 
         _, predicted = outputs.max(1)
         
-        if args.dataset in ['WaferMap']:
+        if args.dataset in ['WaferMap', 'KITTI_Distance_Multiclass']:
             predicted = (outputs > 0.5).float()    
             mixed_targets = (mixed_targets > 0.5).float()   
         elif np.ndim(mixed_targets) == 2:    
@@ -263,7 +263,7 @@ def train_epoch(model, trainloader, optimizer, criterion, Scaler, Dataloader, st
             mixed_targets = torch.cat([mixed_targets] * (criterion.robust_samples+1), 0)
 
         total += mixed_targets.size(0)
-        if args.dataset in ['WaferMap']:
+        if args.dataset in ['WaferMap', 'KITTI_Distance_Multiclass']:
                 matches = predicted.eq(targets)  # shape: [batch_size, num_labels]
                 exact_match = matches.all(dim=1)  # shape: [batch_size], bool tensor
                 correct += exact_match.sum().item()
@@ -301,13 +301,13 @@ def valid_epoch(net, validationloader, Traintracker, Dataloader, criterion, test
 
             test_loss += loss.item()
 
-            if args.dataset in ['WaferMap']:
+            if args.dataset in ['WaferMap', 'KITTI_Distance_Multiclass']:
                 predicted = (outputs > 0.5).float()    
             else:
                 _, predicted = outputs.max(1)
 
             total += targets.size(0)
-            if args.dataset in ['WaferMap']:
+            if args.dataset in ['WaferMap', 'KITTI_Distance_Multiclass']:
                 matches = predicted.eq(targets)  # shape: [batch_size, num_labels]
                 exact_match = matches.all(dim=1)  # shape: [batch_size], bool tensor
                 correct += exact_match.sum().item()

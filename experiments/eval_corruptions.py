@@ -32,14 +32,14 @@ def compute_p_corruptions(testloader, model, test_corruptions, dataset):
             with torch.amp.autocast('cuda'):
                 targets_pred = model(inputs_pert)
 
-            if dataset in ['WaferMap']:
+            if dataset in ['WaferMap','KITTI_Distance_Multiclass']:
                 predicted = (targets_pred > 0.5).float() 
             else:  
                 _, predicted = targets_pred.max(1)
 
             total += targets.size(0)
             
-            if dataset in ['WaferMap']:
+            if dataset in ['WaferMap','KITTI_Distance_Multiclass']:
                 matches = predicted.eq(targets)  # shape: [batch_size, num_labels]
                 exact_match = matches.all(dim=1)  # shape: [batch_size], bool tensor
                 correct += exact_match.sum().item()
@@ -62,7 +62,8 @@ def compute_c_corruptions(dataset, testsets_c, model, batchsize, num_classes, cr
 
     for corruption, corruption_testset in testsets_c.items():
         workers = workers if corruption in ['combined', 'caustic_refraction', 'perlin_noise', 'plasma_noise', 'sparkles'] else 0 #compute heavier corruptions
-        if dataset in ['ImageNet','ImageNet-100']:
+        if dataset in ['ImageNet','ImageNet-100', 'KITTI_RoadLane', 'KITTI_Distance_Multiclass', 'TreeSAT', 
+                       'Casting-Product-Quality', 'Describable-Textures', 'Flickr-Material']:
             workers = workers
         testloader_c = DataLoader(corruption_testset, batch_size=batchsize, shuffle=False, pin_memory=True, num_workers=workers, 
                                   worker_init_fn=seed_worker, generator=t)
@@ -94,7 +95,7 @@ def compute_c(loader_c, model, num_classes, dataset, criterion = None):
     with torch.no_grad():
         model.eval()
         correct, total, loss_c = 0, 0, 0
-        if dataset in ['WaferMap']:
+        if dataset in ['WaferMap', 'KITTI_Distance_Multiclass']:
             calibration_metric = BinaryCalibrationError(n_bins=15, norm='l1')
         else:
             calibration_metric = MulticlassCalibrationError(num_classes=num_classes, n_bins=15, norm='l1')
@@ -113,13 +114,13 @@ def compute_c(loader_c, model, num_classes, dataset, criterion = None):
             
             avg_test_loss_c = loss_c / (batch_idx + 1)
             
-            if dataset in ['WaferMap']:
+            if dataset in ['WaferMap','KITTI_Distance_Multiclass']:
                 predicted = (targets_pred > 0.5).float() 
             else:  
                 _, predicted = targets_pred.max(1)
 
             total += targets.size(0)
-            if dataset in ['WaferMap']:
+            if dataset in ['WaferMap','KITTI_Distance_Multiclass']:
                 matches = predicted.eq(targets)  # shape: [batch_size, num_labels]
                 exact_match = matches.all(dim=1)  # shape: [batch_size], bool tensor
                 correct += exact_match.sum().item()
@@ -128,7 +129,7 @@ def compute_c(loader_c, model, num_classes, dataset, criterion = None):
             all_targets = torch.cat((all_targets, targets), 0)
             all_targets_pred = torch.cat((all_targets_pred, targets_pred), 0)
 
-        if dataset in ['WaferMap']:
+        if dataset in ['WaferMap','KITTI_Distance_Multiclass']:
             rmsce_c = float(calibration_metric(all_targets_pred.view(-1), all_targets.view(-1)).cpu())
         else:
             rmsce_c = float(calibration_metric(all_targets_pred, all_targets).cpu())

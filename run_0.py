@@ -21,7 +21,7 @@ if __name__ == '__main__':
 
         for run in run_iters:
 
-            resume = True if experiment in [3] and run in [0] else False
+            resume = True if experiment in [3] and run in [0,1] else False
 
             print("Training run #",run)
             cmd0 = f"python experiments/train.py --resume={resume} --run={run} --experiment={experiment} --epochs=" \
@@ -53,7 +53,7 @@ if __name__ == '__main__':
         # Calculate accuracy and robust accuracy, evaluating each trained network on each corruption
 
         print('Beginning metric evaluation')
-        cmdeval = f"python experiments/eval.py --experiment={experiment} --runs={runs} --batchsize={1000} " \
+        cmdeval = f"python experiments/eval.py --experiment={experiment} --runs={runs} --batchsize={config.batchsize} " \
                 f"--dataset={config.dataset} --modeltype={config.modeltype} --modelparams=\"{config.modelparams}\" " \
                 f"--resize={config.resize} --combine_test_corruptions={config.combine_test_corruptions} --number_workers={config.number_workers} " \
                 f"--normalize={config.normalize} --test_on_c={config.test_on_c} " \

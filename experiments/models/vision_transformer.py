@@ -17,7 +17,6 @@ from torchvision.transforms._presets import ImageClassification, InterpolationMo
 
 __all__ = [
     "VisionTransformer",
-    "ViT_B_4",
     "ViT_B_8",
     "ViT_B_16",
     "ViT_B_16_Weights"
@@ -499,7 +498,7 @@ def ViT_B_16(*, weights: Optional[ViT_B_16_Weights] = None, dataset: str, normal
 
 def ViT_B_8(*, weights = None, dataset: str, normalized: bool, factor: int, num_classes: int, progress: bool = True, **kwargs: Any) -> VisionTransformer:
     """
-    Constructs a vit_b_8 architecture based on although patch size 8 does not exist there.
+    Constructs a small scale vit_b_8 architecture based on this paper although patch size 8 does not exist there.
     `An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale <https://arxiv.org/abs/2010.11929>`_.
 
     Args:
@@ -526,37 +525,6 @@ def ViT_B_8(*, weights = None, dataset: str, normalized: bool, factor: int, num_
         num_classes=num_classes,
         **kwargs,
     )
-
-def ViT_B_4(*, weights = None, dataset: str, normalized: bool, factor: int, num_classes: int, progress: bool = True, **kwargs: Any) -> VisionTransformer:
-    """
-    Constructs a vit_b_8 architecture based on although patch size 8 does not exist there.
-    `An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale <https://arxiv.org/abs/2010.11929>`_.
-
-    Args:
-        progress (bool, optional): If True, displays a progress bar of the download to stderr. Default is True.
-        **kwargs: parameters passed to the ``torchvision.models.vision_transformer.VisionTransformer``
-            base class. Please refer to the `source code
-            <https://github.com/pytorch/vision/blob/main/torchvision/models/vision_transformer.py>`_
-            for more details about this class.
-        :members:
-    """
-    image_size = 32 * factor
-
-    return _vision_transformer(
-        patch_size=4,
-        num_layers=9,
-        num_heads=12,
-        hidden_dim=192,
-        mlp_dim=512,
-        progress=progress,
-        image_size=image_size,
-        weights=weights,
-        dataset=dataset,
-        normalized=normalized,
-        num_classes=num_classes,
-        **kwargs,
-    )
-
 
 def interpolate_embeddings(
     image_size: int,

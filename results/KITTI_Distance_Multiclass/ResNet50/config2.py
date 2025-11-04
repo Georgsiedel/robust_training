@@ -13,9 +13,9 @@ noise_patch_scale = {'lower': 0.2, 'upper': 0.7}
 combine_train_corruptions = True #augment the train dataset with all corruptions
 concurrent_combinations = 1 #only has an effect if combine_train_corruption is True
 
-batchsize = 64
+batchsize = 128
 minibatchsize = 8
-dataset = 'TreeSAT' #ImageNet #CIFAR100 #CIFAR10 #TinyImageNet
+dataset = 'KITTI_Distance_Multiclass' #ImageNet #CIFAR100 #CIFAR10 #TinyImageNet
 generated_ratio = 0.0
 normalize = True
 validontest = True

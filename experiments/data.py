@@ -115,7 +115,9 @@ class DataLoading():
         self.number_workers = number_workers
         self.kaggle = kaggle
 
-        if dataset in ['CIFAR10', 'CIFAR100', 'GTSRB','ImageNet', 'ImageNet-100']:
+        if dataset in ['CIFAR10', 'CIFAR100', 'GTSRB','ImageNet', 'ImageNet-100', 'KITTI_RoadLane', 
+                       'KITTI_Distance_Multiclass', 'TreeSAT', 'Casting-Product-Quality', 
+                       'Describable-Textures', 'Flickr-Material']:
             self.factor = 1
         elif dataset in ['TinyImageNet', 'EuroSAT', 'Wafermap']:
             self.factor = 2
@@ -123,7 +125,6 @@ class DataLoading():
             self.factor = 3
         else:
             self.factor = 1
-
         
         file_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "paths.json")
         with open(file_path, "r") as f:
@@ -154,7 +155,8 @@ class DataLoading():
                           style_orig={'probability': 0.0, 'alpha_min': 1.0, 'alpha_max': 1.0}, 
                           style_gen={'probability': 0.0, 'alpha_min': 1.0, 'alpha_max': 1.0}, 
                           style_and_aug_orig=True, style_and_aug_gen=True, 
-                          RandomEraseProbability=0.0, stylization_first=False):
+                          RandomEraseProbability=0.0, stylization_first=False,
+                          minibatchsize=8):
         self.train_aug_strat_orig = train_aug_strat_orig
         self.train_aug_strat_gen = train_aug_strat_gen
         self.style_orig = style_orig
@@ -163,6 +165,7 @@ class DataLoading():
         self.style_and_aug_gen = style_and_aug_gen
         self.stylization_first = stylization_first
         self.RandomEraseProbability = RandomEraseProbability
+        self.minibatchsize = minibatchsize
         # list of all data transformations used
         t = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)])
         c32 = transforms.RandomCrop(32, padding=4)
@@ -174,23 +177,39 @@ class DataLoading():
         flip_v = transforms.RandomVerticalFlip()
         r32 = transforms.Resize((32,32), antialias=True)
         r224 = transforms.Resize(224, antialias=True)
-        r256 = transforms.Resize(256, antialias=True)
+        r232 = transforms.Resize(256, antialias=True)
+        r320 = transforms.Resize((320,1056), antialias=True)
+        r384 = transforms.Resize((384,1280), antialias=True)
         cc224 = transforms.CenterCrop(224)
+        rrc176 = transforms.RandomResizedCrop(176, antialias=True)
         rrc224 = transforms.RandomResizedCrop(224, antialias=True)
         re = transforms.RandomErasing(p=self.RandomEraseProbability, scale=(0.02, 0.4))
 
         # transformations of validation/test set and necessary transformations for training
         # always done (even for clean images while training, when using robust loss)
-        if self.dataset in ['ImageNet', 'ImageNet-100']:
-            self.transforms_preprocess = transforms.Compose([t])
-            self.transforms_preprocess_additional_train = transforms.Compose([rrc224])
-            self.transforms_preprocess_additional_test = transforms.Compose([r256, cc224])
+        if self.dataset in ['ImageNet', 'ImageNet-100', 'TreeSAT', 'Casting-Product-Quality', 
+                       'Describable-Textures', 'Flickr-Material']:
+            #see https://pytorch.org/blog/how-to-train-state-of-the-art-models-using-torchvision-latest-primitives/ for FixRes recipe
+            self.transforms_preprocess_train = transforms.Compose([t, rrc176]) #rrc224 
+            self.transforms_preprocess_test = transforms.Compose([t, r232, cc224])
+
+        elif self.dataset in ['KITTI_RoadLane', 'KITTI_Distance_Multiclass']:
+            self.transforms_preprocess_train = transforms.Compose([t, r320])
+            self.transforms_preprocess_test = transforms.Compose([t, r384])
+
         elif self.dataset == 'GTSRB':
-            self.transforms_preprocess = transforms.Compose([t, r32])
+            self.transforms_preprocess_train = transforms.Compose([t, r32])
+            self.transforms_preprocess_test = transforms.Compose([t, r32])
         elif self.dataset == 'WaferMap':
             #https://github.com/Junliangwangdhu/WaferMap/tree/master
-            #preprocessing once upon load_base_data, not on the fly (small set fits in memory, lots of operations)
-            self.transforms_preprocess = transforms.Compose([
+            self.transforms_preprocess_train = transforms.Compose([
+                t,
+                custom_transforms.ToFloat32(),
+                custom_transforms.DivideBy2(),
+                custom_transforms.ExpandGrayscaleTensorTo3Channels(), #directly converts to 3 channels
+                c64_WM
+            ])
+            self.transforms_preprocess_test = transforms.Compose([
                 t,
                 custom_transforms.ToFloat32(),
                 custom_transforms.DivideBy2(),
@@ -199,30 +218,38 @@ class DataLoading():
             ])
             
         else:
-            self.transforms_preprocess = transforms.Compose([t])
+            self.transforms_preprocess_train = transforms.Compose([t])
+            self.transforms_preprocess_test = transforms.Compose([t])
         
-        if self.resize == True and self.dataset not in ['ImageNet', 'ImageNet-100']:
-            self.transforms_preprocess = transforms.Compose([t, r224])
+        if self.resize == True and self.dataset not in ['ImageNet', 'ImageNet-100', 'TreeSAT', 'Casting-Product-Quality', 
+                       'Describable-Textures', 'Flickr-Material']:
+            self.transforms_preprocess_train = transforms.Compose([t, r224])
+            self.transforms_preprocess_test = transforms.Compose([t, r224])
 
         # standard augmentations of training set, without tensor transformation
-        if self.dataset in ['ImageNet', 'ImageNet-100']:
+        if self.dataset in ['ImageNet', 'ImageNet-100', 'Describable-Textures', 'Flickr-Material', 
+                            'KITTI_RoadLane', 'KITTI_Distance_Multiclass']:
             self.transforms_basic = transforms.Compose([flip])
+        elif self.dataset in ['TreeSAT', 'Casting-Product-Quality']:
+            self.transforms_basic = transforms.Compose([flip, flip_v])
         elif self.dataset in ['CIFAR10', 'CIFAR100', 'GTSRB']:
             self.transforms_basic = transforms.Compose([flip, c32])
-        elif self.dataset in ['TinyImageNet', 'EuroSAT']:
+        elif self.dataset in ['EuroSAT']:
+            self.transforms_basic = transforms.Compose([flip, flip_v, c64])
+        elif self.dataset in ['TinyImageNet']:
             self.transforms_basic = transforms.Compose([flip, c64])
         elif self.dataset in ['PCAM']:
             self.transforms_basic = transforms.Compose([flip, flip_v, c96])
         elif self.dataset in ['WaferMap']:
-            self.transforms_basic = transforms.Compose([c64_WM, flip, flip_v])
+            self.transforms_basic = transforms.Compose([flip, flip_v, c64_WM])
 
         if self.resize == True and self.dataset not in ['ImageNet', 'ImageNet-100']:
             self.transforms_basic = transforms.Compose([flip, c224])
 
         transform_manager_orig = custom_transforms.TransformFactory(re, self.style_feats_path, train_aug_strat_orig, 
-                                                                    style_orig, style_and_aug_orig)
+                                                                    style_orig, style_and_aug_orig, minibatchsize)
         transform_manager_gen = custom_transforms.TransformFactory(re, self.style_feats_path, train_aug_strat_gen, 
-                                                                    style_gen, style_and_aug_gen)
+                                                                    style_gen, style_and_aug_gen, minibatchsize)
         if stylization_first:
             self.stylization_orig, self.transforms_orig_after_style, self.transforms_orig_after_nostyle = transform_manager_orig.get_transforms_style_first()
             self.stylization_gen, self.transforms_gen_after_style, self.transforms_gen_after_nostyle = transform_manager_gen.get_transforms_style_first()
@@ -252,9 +279,9 @@ class DataLoading():
             self.style_and_aug_gen = style_and_aug_syn
 
         transform_manager_orig = custom_transforms.TransformFactory(re, self.style_feats_path, self.train_aug_strat_orig, 
-                                                                    self.style_orig, self.style_and_aug_orig)
+                                                                    self.style_orig, self.style_and_aug_orig, self.minibatchsize)
         transform_manager_gen = custom_transforms.TransformFactory(re, self.style_feats_path, self.train_aug_strat_gen, 
-                                                                    self.style_gen, self.style_and_aug_gen)
+                                                                    self.style_gen, self.style_and_aug_gen, self.minibatchsize)
         if self.stylization_first:
             self.stylization_orig, self.transforms_orig_after_style, self.transforms_orig_after_nostyle = transform_manager_orig.get_transforms_style_first()
             self.stylization_gen, self.transforms_gen_after_style, self.transforms_gen_after_nostyle = transform_manager_gen.get_transforms_style_first()
@@ -268,35 +295,24 @@ class DataLoading():
 
             if self.dataset in ['ImageNet']:
                 self.testset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/val'),
-                                                                transform=transforms.Compose([self.transforms_preprocess, self.transforms_preprocess_additional_test]))
+                                                                transform=transforms.Compose([self.transforms_preprocess_test]))
                 if test_only:
                     self.base_trainset = None
                 else:
                     self.base_trainset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/train'))
-            elif self.dataset in ['ImageNet-100']:
-                #self.testset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/val'),
-                #                                                transform=transforms.Compose([self.transforms_preprocess, self.transforms_preprocess_additional_test]))
-                self.testset = HDF5ImageDataset(f'{self.data_path}/{self.dataset}/ImageNet-100_val.h5',
-                                                transform=transforms.Compose([self.transforms_preprocess, self.transforms_preprocess_additional_test]))
+
+            elif self.dataset in ['TinyImageNet', 'ImageNet-100']:
+                self.testset = HDF5ImageDataset(f'{self.data_path}/{self.dataset}/{self.dataset}_val.h5',
+                                                transform=transforms.Compose([self.transforms_preprocess_test]))
                 if test_only:
                     self.base_trainset = None
                 else:
-                    #self.base_trainset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/train'))
-                    self.base_trainset = HDF5ImageDataset(f'{self.data_path}/{self.dataset}/ImageNet-100_train.h5')
-            elif self.dataset == 'TinyImageNet':
-                #self.testset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/val'),
-                #                                                transform=self.transforms_preprocess)
-                self.testset = HDF5ImageDataset(f'{self.data_path}/{self.dataset}/TinyImageNet_val.h5',
-                                                transform=transforms.Compose([self.transforms_preprocess]))
-                if test_only:
-                    self.base_trainset = None
-                else:
-                    #self.base_trainset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/train'))
-                    self.base_trainset = HDF5ImageDataset(f'{self.data_path}/{self.dataset}/TinyImageNet_train.h5')
+                    self.base_trainset = HDF5ImageDataset(f'{self.data_path}/{self.dataset}/{self.dataset}_train.h5')
+
             elif self.dataset in ['CIFAR10', 'CIFAR100']:
                 load_helper = getattr(torchvision.datasets, self.dataset)
                 self.testset = load_helper(root=os.path.abspath(f'{self.data_path}'), train=False, download=True,
-                                        transform=self.transforms_preprocess)
+                                        transform=self.transforms_preprocess_test)
                 if test_only:
                     self.base_trainset = None
                 else:
@@ -305,16 +321,17 @@ class DataLoading():
             elif self.dataset in ['GTSRB']:
                 load_helper = getattr(torchvision.datasets, self.dataset)
                 self.testset = load_helper(root=os.path.abspath(f'{self.data_path}'), split='test', download=True,
-                                        transform=self.transforms_preprocess)
+                                        transform=self.transforms_preprocess_test)
                 if test_only:
                     self.base_trainset = None
                 else:
                     self.base_trainset = load_helper(root=os.path.abspath(f'{self.data_path}'), split='train', download=True)
+
             elif self.dataset in ['PCAM']:               
                 
                 self.testset = HDF5ImageDataset(f'{self.data_path}/{self.dataset.lower()}/camelyonpatch_level_2_split_test_x.h5',
                                                 f'{self.data_path}/{self.dataset.lower()}/camelyonpatch_level_2_split_test_y.h5',
-                                                transform=self.transforms_preprocess)
+                                                transform=self.transforms_preprocess_test)
                 
                 if test_only:
                     self.base_trainset = None
@@ -343,7 +360,7 @@ class DataLoading():
                     self.base_trainset = None
                 else:
                     self.base_trainset = Subset(full_set, train_indices)
-                self.testset = SubsetWithTransform(Subset(full_set, val_indices), self.transforms_preprocess)
+                self.testset = SubsetWithTransform(Subset(full_set, val_indices), self.transforms_preprocess_test)
                 
                 self.num_classes = extract_num_classes(self.testset, labels=all_labels)
                 return    
@@ -361,17 +378,44 @@ class DataLoading():
                 test_size=0.2,
                 random_state=0)
 
-                #x_train = torch.stack([self.transforms_preprocess(img) for img in x_train])
-                #x_test = torch.stack([self.transforms_preprocess(img) for img in x_test])
-                #y_train = torch.from_numpy(y_train).float()
-                #y_test = torch.from_numpy(y_test).float()
-
                 if test_only:
                     self.base_trainset = None
                 else:
                     self.base_trainset = NumpyDataset(x_train, y_train)
-                self.testset = NumpyDataset(x_test, y_test, self.transforms_preprocess) #transforms already done
+                self.testset = NumpyDataset(x_test, y_test, self.transforms_preprocess_test) #transforms already done
             
+            elif self.dataset in ['TreeSAT', 'Casting-Product-Quality', 'KITTI_RoadLane']:
+                self.testset = HDF5ImageDataset(f'{self.data_path}/{self.dataset}/{self.dataset}_test.h5',
+                                                transform=self.transforms_preprocess_test)
+                if test_only:
+                    self.base_trainset = None
+                else:
+                    self.base_trainset = HDF5ImageDataset(f'{self.data_path}/{self.dataset}/{self.dataset}_train.h5')
+            
+            elif self.dataset in ['KITTI_Distance_Multiclass', 'Describable-Textures', 'Flickr-Material']:
+                print(f'{self.dataset} has no predefined test split. Using a custom seeded random split.')
+                full_set = HDF5ImageDataset(f'{self.data_path}/{self.dataset}/{self.dataset}.h5')
+                
+                all_labels = extract_labels(full_set)
+
+                testsize = 0.5 if self.dataset in ['Flickr-Material'] else 0.2
+                
+                train_indices, val_indices, _, _ = train_test_split(
+                range(len(full_set)),
+                all_labels,
+                stratify=all_labels,
+                test_size=testsize,
+                random_state=0) #always with 0 seed - testset split should always be the same
+
+                if test_only:
+                    self.base_trainset = None
+                else:
+                    self.base_trainset = Subset(full_set, train_indices)
+                self.testset = SubsetWithTransform(Subset(full_set, val_indices), self.transforms_preprocess_test)
+                
+                self.num_classes = extract_num_classes(self.testset, labels=all_labels)
+                return 
+
             else:
                 print('Dataset not loadable')
 
@@ -380,8 +424,7 @@ class DataLoading():
         else:
             if self.dataset in ['ImageNet']:
                 base_trainset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/train'))
-            elif self.dataset in ['TinyImageNet', 'ImageNet-100']:
-                #base_trainset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/train'))
+            elif self.dataset in ['TinyImageNet', 'ImageNet-100', 'TreeSAT', 'Casting-Product-Quality', 'KITTI_RoadLane']:
                 base_trainset = HDF5ImageDataset(f'{self.data_path}/{self.dataset}/{self.dataset}_train.h5')
             elif self.dataset in ['CIFAR10', 'CIFAR100']:
                 load_helper = getattr(torchvision.datasets, self.dataset)
@@ -395,7 +438,7 @@ class DataLoading():
                 
                 self.testset = HDF5ImageDataset(f'{self.data_path}/{self.dataset.lower()}/camelyonpatch_level_2_split_valid_x.h5',
                                                 f'{self.data_path}/{self.dataset.lower()}/camelyonpatch_level_2_split_valid_y.h5', 
-                                                transform=self.transforms_preprocess)
+                                                transform=self.transforms_preprocess_test)
                     
                 self.num_classes = len(self.base_trainset.classes)
                 return  #PCAM already features train/val split, so we can return
@@ -430,6 +473,23 @@ class DataLoading():
                 random_state=0)
 
                 base_trainset = NumpyDataset(x_train, y_train)
+            
+            elif self.dataset in ['KITTI_Distance_Multiclass', 'Describable-Textures', 'Flickr-Material']:
+                print(f'{self.dataset} has no predefined test split. Using a custom seeded random split.')
+                full_set = HDF5ImageDataset(f'{self.data_path}/{self.dataset}/{self.dataset}.h5')
+                
+                all_labels = extract_labels(full_set)
+
+                testsize = 0.5 if self.dataset in ['Flickr-Material'] else 0.2
+                
+                train_indices, val_indices, _, _ = train_test_split(
+                range(len(full_set)),
+                all_labels,
+                stratify=all_labels,
+                test_size=testsize,
+                random_state=0) #always with 0 seed - testset split should always be the same
+
+                base_trainset = Subset(full_set, train_indices)
 
             else:
                 print('Dataset not loadable')  
@@ -450,10 +510,7 @@ class DataLoading():
 
                 self.base_trainset = Subset(base_trainset, train_indices)
 
-            if self.dataset in ['ImageNet', 'ImageNet-100']:
-                self.testset = SubsetWithTransform(Subset(base_trainset, val_indices), transforms.Compose([self.transforms_preprocess, self.transforms_preprocess_additional_test]))
-            else:
-                self.testset = SubsetWithTransform(Subset(base_trainset, val_indices), transforms.Compose([self.transforms_preprocess]))
+            self.testset = SubsetWithTransform(Subset(base_trainset, val_indices), self.transforms_preprocess_test)
             
             self.num_classes = extract_num_classes(self.testset, labels=all_labels)
     
@@ -461,7 +518,6 @@ class DataLoading():
         style_dataset = StyleDataset(style_dir, dataset_type=self.dataset)
         style_loader = DataLoader(style_dataset, batch_size=batch_size, shuffle=False)
         return style_loader
-
         
     def load_augmented_traindata(self, target_size, generated_ratio, epoch=0, robust_samples=0, stylization_first=False):
         self.robust_samples = robust_samples
@@ -489,11 +545,7 @@ class DataLoading():
 
             if self.num_original > 0:
                 original_indices = torch.randperm(self.target_size)[:self.num_original]
-                if hasattr(self, "transforms_preprocess_additional_train"):
-                    original_subset = SubsetWithTransform(Subset(self.base_trainset, original_indices), 
-                                                          transforms.Compose([self.transforms_preprocess, self.transforms_preprocess_additional_train]))
-                else:
-                    original_subset = SubsetWithTransform(Subset(self.base_trainset, original_indices), self.transforms_preprocess)
+                original_subset = SubsetWithTransform(Subset(self.base_trainset, original_indices), self.transforms_preprocess_train)
 
                 if self.stylization_orig is not None:
                     stylized_original_subset, style_mask_orig = self.stylization_orig(original_subset)
@@ -508,7 +560,7 @@ class DataLoading():
                 generated_subset = NumpyDataset(
                     self.generated_dataset['image'][generated_indices],
                     self.generated_dataset['label'][generated_indices],
-                    transform=self.transforms_preprocess
+                    transform=self.transforms_preprocess_train
                 )
 
                 if self.stylization_gen is not None:
@@ -527,11 +579,7 @@ class DataLoading():
         else:
             if self.num_original > 0:
                 original_indices = torch.randperm(len(self.base_trainset))[:self.num_original]
-                if hasattr(self, "transforms_preprocess_additional_train"):
-                    original_subset = SubsetWithTransform(Subset(self.base_trainset, original_indices), 
-                                                          transforms.Compose([self.transforms_preprocess, self.transforms_preprocess_additional_train]))
-                else:
-                    original_subset = SubsetWithTransform(Subset(self.base_trainset, original_indices), self.transforms_preprocess)
+                original_subset = SubsetWithTransform(Subset(self.base_trainset, original_indices), self.transforms_preprocess_train)
 
             else:
                 original_subset = None
@@ -542,7 +590,7 @@ class DataLoading():
                 generated_subset = NumpyDataset(
                     self.generated_dataset['image'][generated_indices],
                     self.generated_dataset['label'][generated_indices],
-                    transform=self.transforms_preprocess
+                    transform=self.transforms_preprocess_train
                 )
             else:
                 generated_subset = None
@@ -565,6 +613,7 @@ class DataLoading():
         if valid_run:
 
             batch_size = min(100, subsetsize)
+            workers = 8 if corruption in ['caustic_refraction', 'perlin_noise', 'plasma_noise', 'sparkles'] else 2
 
             r = torch.Generator()
             r.manual_seed(0) #ensure that the same testset is always used when generating random corruptions
@@ -574,7 +623,7 @@ class DataLoading():
                 batch_size=batch_size,
                 shuffle=False,
                 pin_memory=True,
-                num_workers=0, #because of some pickle error with multiprocessing
+                num_workers=workers, #because of some pickle error with multiprocessing 0 may be needed
                 worker_init_fn=seed_worker,
                 generator=r,
                 drop_last=False
@@ -583,7 +632,13 @@ class DataLoading():
             # Collect all batches into tensors (no double for loop needed!)
             all_samples = []
             all_labels = []
-            
+
+            if corruption in ['gaussian_noise', 'shot_noise', 'impulse_noise', 'defocus_blur', 'glass_blur', 
+                              'motion_blur', 'zoom_blur', 'snow', 'frost', 'fog', 'brightness', 'contrast',
+                              'elastic_transform', 'pixelate', 'jpeg_compression', 'speckle_noise', 'gaussian_blur',
+                              'spatter', 'saturate', 'blue_noise_sample', 'brownish_noise']:
+                return c_datasets
+                        
             for batch_samples, batch_labels in precompute_loader:
                 all_samples.append(batch_samples)
                 all_labels.append(batch_labels)
@@ -631,7 +686,7 @@ class DataLoading():
                         selected_indices = np.random.choice(len(self.testset), subsetsize, replace=False)
                         subtestset = Subset(self.testset, selected_indices)
                         np_data_c = [intensity_dataset[selected_indices] for intensity_dataset in np_data_c]
-                    concat_intensities = ConcatDataset([CustomDataset(intensity_data_c, subtestset, self.resize, self.transforms_preprocess) for intensity_data_c in np_data_c])
+                    concat_intensities = ConcatDataset([CustomDataset(intensity_data_c, subtestset, self.resize, self.transforms_preprocess_test) for intensity_data_c in np_data_c])
                     c_datasets.append(concat_intensities)
 
                 else:
@@ -648,7 +703,7 @@ class DataLoading():
                 
                 if self.validontest:
                     intensity_datasets = [torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}-{set}/' + corruption + '/' + str(intensity)),
-                                                                        transform=self.transforms_preprocess) for intensity in range(1, 6)]
+                                                                        transform=self.transforms_preprocess_test) for intensity in range(1, 6)]
                     if subset == True:
                         selected_indices = np.random.choice(len(intensity_datasets[0]), subsetsize, replace=False)
                         intensity_datasets = [Subset(intensity_dataset, selected_indices) for intensity_dataset in intensity_datasets]
@@ -664,7 +719,11 @@ class DataLoading():
                 print('No c- and c-bar-benchmark available for this dataset. ' \
                 'Computing custom corruptions as in CIFAR-C and CIFAR-C-bar.')
 
-            csv_handler = CsvHandler(os.path.abspath(f'{self.c_labels_path}/cifar_c_bar.csv'))
+            if self.dataset in ['GTSRB', 'Wafermap']:
+                csv_handler = CsvHandler(os.path.abspath(f'{self.c_labels_path}/cifar_c_bar.csv'))
+            else:
+                csv_handler = CsvHandler(os.path.abspath(f'{self.c_labels_path}/imagenet_c_bar.csv'))
+
             corruptions_bar = csv_handler.read_corruptions()
 
             corruptions = [(string, 'c') for string in corruptions_c] + [(string, 'c-bar') for string in corruptions_bar]
@@ -697,7 +756,7 @@ class DataLoading():
                                     num_workers=self.number_workers, worker_init_fn=seed_worker, 
                                     generator=g, persistent_workers=False)
         
-        val_workers = self.number_workers if self.dataset in ['ImageNet', 'ImageNet-100'] else 0
+        val_workers = self.number_workers if self.dataset in ['ImageNet'] else 0
         self.testloader = DataLoader(self.testset, batch_size=batchsize, pin_memory=True, num_workers=val_workers)
 
         return self.trainloader, self.testloader

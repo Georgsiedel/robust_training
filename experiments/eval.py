@@ -71,7 +71,7 @@ def compute_clean(testloader, model, num_classes, dataset):
     with torch.no_grad():
         correct = 0
         total = 0
-        if dataset in ['WaferMap']:
+        if dataset in ['WaferMap', 'KITTI_Distance_Multiclass']:
             calibration_metric = BinaryCalibrationError(n_bins=15, norm='l1')
         else:
             calibration_metric = MulticlassCalibrationError(num_classes=num_classes, n_bins=15, norm='l1')
@@ -85,14 +85,14 @@ def compute_clean(testloader, model, num_classes, dataset):
             with torch.amp.autocast('cuda'):
                 targets_pred = model(inputs)
             
-            if dataset in ['WaferMap']:
+            if dataset in ['WaferMap', 'KITTI_Distance_Multiclass']:
                 predicted = (targets_pred > 0.5).float()    
             else:
                 _, predicted = targets_pred.max(1)
 
             total += targets.size(0)
 
-            if dataset in ['WaferMap']:
+            if dataset in ['WaferMap','KITTI_Distance_Multiclass']:
                 matches = predicted.eq(targets)  # shape: [batch_size, num_labels]
                 exact_match = matches.all(dim=1)  # shape: [batch_size], bool tensor
                 correct += exact_match.sum().item()
@@ -102,7 +102,7 @@ def compute_clean(testloader, model, num_classes, dataset):
             all_targets_pred = torch.cat((all_targets_pred, targets_pred), 0)
 
         acc = 100.*correct/total
-        if dataset in ['WaferMap']:
+        if dataset in ['WaferMap', 'KITTI_Distance_Multiclass']:
             rmsce_clean = float(calibration_metric(all_targets_pred.view(-1), all_targets.view(-1)).cpu())
         else:
             rmsce_clean = float(calibration_metric(all_targets_pred, all_targets).cpu())
@@ -128,7 +128,8 @@ if __name__ == '__main__':
             Dataloader.create_transforms(train_aug_strat_orig='None', train_aug_strat_gen='None')
             Dataloader.load_base_data(test_only=True)
             workers = 0 if args.validontest else args.number_workers
-            if args.dataset in ['Imagenet','ImageNet-100']:
+            if args.dataset in ['Imagenet','ImageNet-100','KITTI_RoadLane', 'KITTI_Distance_Multiclass', 'TreeSAT', 
+                                'Casting-Product-Quality', 'Describable-Textures', 'Flickr-Material']:
                 workers = args.number_workers
             
             testloader = torch.utils.data.DataLoader(Dataloader.testset, batch_size=args.batchsize, pin_memory=True, num_workers=workers)
