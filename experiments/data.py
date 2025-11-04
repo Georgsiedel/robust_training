@@ -247,9 +247,9 @@ class DataLoading():
             self.transforms_basic = transforms.Compose([flip, c224])
 
         transform_manager_orig = custom_transforms.TransformFactory(re, self.style_feats_path, train_aug_strat_orig, 
-                                                                    style_orig, style_and_aug_orig, minibatchsize)
+                                                                    style_orig, style_and_aug_orig, self.dataset, minibatchsize)
         transform_manager_gen = custom_transforms.TransformFactory(re, self.style_feats_path, train_aug_strat_gen, 
-                                                                    style_gen, style_and_aug_gen, minibatchsize)
+                                                                    style_gen, style_and_aug_gen, self.dataset, minibatchsize)
         if stylization_first:
             self.stylization_orig, self.transforms_orig_after_style, self.transforms_orig_after_nostyle = transform_manager_orig.get_transforms_style_first()
             self.stylization_gen, self.transforms_gen_after_style, self.transforms_gen_after_nostyle = transform_manager_gen.get_transforms_style_first()
@@ -279,9 +279,9 @@ class DataLoading():
             self.style_and_aug_gen = style_and_aug_syn
 
         transform_manager_orig = custom_transforms.TransformFactory(re, self.style_feats_path, self.train_aug_strat_orig, 
-                                                                    self.style_orig, self.style_and_aug_orig, self.minibatchsize)
+                                                                    self.style_orig, self.style_and_aug_orig, self.dataset, self.minibatchsize)
         transform_manager_gen = custom_transforms.TransformFactory(re, self.style_feats_path, self.train_aug_strat_gen, 
-                                                                    self.style_gen, self.style_and_aug_gen, self.minibatchsize)
+                                                                    self.style_gen, self.style_and_aug_gen, self.dataset, self.minibatchsize)
         if self.stylization_first:
             self.stylization_orig, self.transforms_orig_after_style, self.transforms_orig_after_nostyle = transform_manager_orig.get_transforms_style_first()
             self.stylization_gen, self.transforms_gen_after_style, self.transforms_gen_after_nostyle = transform_manager_gen.get_transforms_style_first()

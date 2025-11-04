@@ -172,7 +172,7 @@ class NSTTransform_rectangular(transforms.Transform):
 
      """
 
-    def __init__(self, style_feats, vgg, decoder, alpha_min=1.0, alpha_max=1.0, probability=0.5, overlap=32):
+    def __init__(self, style_feats, vgg, decoder, alpha_min=1.0, alpha_max=1.0, probability=0.5, overlap: int = 32):
         super().__init__()
         self.vgg = vgg
         self.decoder = decoder
@@ -188,6 +188,7 @@ class NSTTransform_rectangular(transforms.Transform):
         self.probability = probability
         self.to_pil_img = transforms.ToPILImage()
         self.overlap = overlap
+        assert overlap > 0, 'Overlap must be larger than 0 as images are interpolated'
 
     @torch.no_grad()
     def __call__(self, x):
@@ -215,8 +216,7 @@ class NSTTransform_rectangular(transforms.Transform):
 
         # Constants
         patch_size = 224
-        overlap = 32
-        stride = patch_size - overlap
+        stride = patch_size - self.overlap
 
         metas_selected = []
         resized_selected_images = []        # CPU tensors [3, new_H, new_W] in same order as selected indices
@@ -239,8 +239,8 @@ class NSTTransform_rectangular(transforms.Transform):
             resized_selected_images.append(img_resized.squeeze(0).cpu())  # keep CPU copy for reconstruction
 
             # compute tiling grid
-            num_h = max(1, math.ceil((new_H - overlap) / stride))
-            num_w = max(1, math.ceil((new_W - overlap) / stride))
+            num_h = max(1, math.ceil((new_H - self.overlap) / stride))
+            num_w = max(1, math.ceil((new_W - self.overlap) / stride))
             num_patches = int(num_h * num_w)
             metas_selected.append((selected_image_order[r], orig_H, orig_W, new_H, new_W, int(num_h), int(num_w), int(num_patches)))
 
@@ -293,30 +293,49 @@ class NSTTransform_rectangular(transforms.Transform):
                     left = min(int(j * stride), max(0, new_W - patch_size))
 
                     if proc_ptr >= stylized_patches_proc.shape[0]:
-                        print("ERROR: stylized patches exhausted unexpectedly.")
                         raise RuntimeError("Stylized patches exhausted unexpectedly.")
 
                     patch = stylized_patches_proc[proc_ptr]  # [3,224,224] CPU
                     proc_ptr += 1
 
+                    # --- Build smooth linear interpolation mask for this patch ---
+                    mask_y = torch.linspace(0, 1, patch_size).unsqueeze(1).repeat(1, patch_size)
+                    mask_x = torch.linspace(0, 1, patch_size).unsqueeze(0).repeat(patch_size, 1)
+
+                    # weight along overlap zone (horizontal and vertical blend)
+                    mask_h = torch.ones_like(mask_y)
+                    mask_w = torch.ones_like(mask_x)
+
+                    # vertical linear fade
+                    if i > 0:
+                        # fade in from top neighbor
+                        mask_h[:self.overlap, :] = torch.linspace(0, 1, self.overlap).unsqueeze(1)
+                    if i < num_h - 1:
+                        # fade out toward bottom neighbor
+                        mask_h[-self.overlap:, :] = torch.linspace(1, 0, self.overlap).unsqueeze(1)
+
+                    # horizontal linear fade
+                    if j > 0:
+                        # fade in from left neighbor
+                        mask_w[:, :self.overlap] = torch.linspace(0, 1, self.overlap).unsqueeze(0)
+                    if j < num_w - 1:
+                        # fade out toward right neighbor
+                        mask_w[:, -self.overlap:] = torch.linspace(1, 0, self.overlap).unsqueeze(0)
+
+                    mask2d = mask_h * mask_w
+                    mask3 = mask2d.unsqueeze(0).repeat(3, 1, 1)  # [3,224,224]
+
+                    # --- Blend into reconstruction ---
                     recon[:, top:top+patch_size, left:left+patch_size] += patch * mask3
                     weight[:, top:top+patch_size, left:left+patch_size] += mask3
 
             # Normalize overlapping regions
             recon = recon / torch.clamp(weight, min=1e-5)
 
-            # Insert the reconstructed selected image back into original tensor x (on CPU)
-            expected_channels = x[img_idx].shape[0]
-            if recon.shape[0] != expected_channels:
-                print(f"ERROR: channel mismatch for image {img_idx}: expected {expected_channels}, got {recon.shape[0]}")
-                raise RuntimeError("Channel mismatch during insertion of stylized image.")
-
             # Resize back to original image size
             recon_resized_back = F.resize(recon, size=[orig_H, orig_W], interpolation=F.InterpolationMode.BILINEAR)
-
             if was_grayscale:
                 recon_resized_back = F.rgb_to_grayscale(recon_resized_back)
-
             x[img_idx] = recon_resized_back
 
         # Sanity: ensure we consumed all stylized patches

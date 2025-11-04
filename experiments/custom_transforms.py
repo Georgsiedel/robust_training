@@ -17,7 +17,7 @@ import experiments.style_transfer as style_transfer
 from experiments.custom_datasets import StylizedTensorDataset
 
 class TransformFactory:
-    def __init__(self, re, style_path, strat_name, style, style_and_aug, minibatchsize=8):
+    def __init__(self, re, style_path, strat_name, style, style_and_aug, dataset, minibatchsize=8):
         self.re = re
         self.TAc = CustomTA_color()
         self.TAg = CustomTA_geometric()
@@ -26,11 +26,26 @@ class TransformFactory:
         self.style_and_aug = style_and_aug
         self.style_path = style_path
         self.minibatchsize = minibatchsize
+        self.dataset = dataset
 
     def _stylization(self, probability=1.0, alpha_min=0.2, alpha_max=1.0):
         vgg, decoder = style_transfer.load_models()
         style_feats = style_transfer.load_feat_files(self.style_path)
-        return style_transfer.NSTTransform(style_feats, vgg, decoder, alpha_min=alpha_min, alpha_max=alpha_max, probability=probability)
+        if self.dataset in ['KITTI_RoadLane', 'KITTI_Distance_Multiclass']:
+            style_transforms = style_transfer.NSTTransform_rectangular(style_feats, 
+                                                                        vgg, 
+                                                                        decoder, 
+                                                                        alpha_min=alpha_min, 
+                                                                        alpha_max=alpha_max, 
+                                                                        probability=probability,
+                                                                        overlap=64)
+        else:
+            style_transforms = style_transfer.NSTTransform(style_feats, 
+                                                           vgg, decoder, 
+                                                           alpha_min=alpha_min, 
+                                                           alpha_max=alpha_max, 
+                                                           probability=probability)
+        return style_transforms
 
     def get_transforms(self):
         batch_transforms = BatchStyleTransforms(stylized_ratio=self.style['probability'], 
