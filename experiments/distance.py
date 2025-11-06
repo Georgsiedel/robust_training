@@ -1,3 +1,10 @@
+"""
+This script is based on the founding paper repo here: 
+https://github.com/yangarbiter/robust-local-lipschitz
+and the adaptation of the method here:
+https://github.com/Georgsiedel/minimal-separation-corruption-robustness
+"""
+
 import torch
 import torchvision
 import torchvision.transforms as transforms
@@ -8,34 +15,35 @@ import pandas as pd
 import time
 import matplotlib.pyplot as plt
 import os
+from .data import DataLoading
+from .custom_datasets import SubsetWithTransform
 
 # calculate r-separation distance of dataset
-def get_nearest_oppo_dist(norm):
+def get_nearest_oppo_dist(norm, dataset):
 
-    transform_train = transforms.Compose([
-        transforms.ToTensor()
-    ])
-    transform_test = transforms.Compose([
-        transforms.ToTensor()
-    ])
+    data_class = DataLoading(dataset=dataset)
+    data_class.create_transforms(train_aug_strat_orig='None', train_aug_strat_gen='None')
+    data_class.load_base_data()
+    trainset = SubsetWithTransform(data_class.base_trainset, data_class.transforms_preprocess_train)
+    testset = data_class.testset
 
-    trainset = torchvision.datasets.CIFAR10(root='./experiments/data', train=True, download=True, transform=transform_train)
+    #for large datasets, this can only be done with a lot of RAM. the entire set is loaded.
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=len(trainset), shuffle=False)
-    testset = torchvision.datasets.CIFAR10(root='./experiments/data', train=False, download=True, transform=transform_test)
     testloader = torch.utils.data.DataLoader(testset, batch_size=len(testset), shuffle=False)
 
-    for helper_id, (inputs, targets) in enumerate(trainloader):
+    for _, (inputs, targets) in enumerate(trainloader):
         train_x = inputs
         train_y = targets
         if len(train_x.shape) > 2:
             train_x = train_x.reshape(len(train_x), -1)
 
-    for helper_id, (inputs, targets) in enumerate(testloader):
+    for _, (inputs, targets) in enumerate(testloader):
         test_x = inputs
         test_y = targets
         if len(test_x.shape) > 2:
             test_x = test_x.reshape(len(test_x), -1)
     print("Data loading done for distance evaluation")
+
     def helper_train(yi):
         return NearestNeighbors(n_neighbors=1,
                                 metric='minkowski', p=norm, n_jobs=-1).fit(train_x[train_y != yi])
@@ -68,33 +76,12 @@ def get_nearest_oppo_dist(norm):
 
     return traintrain_ret, traintest_ret, testtest_ret
 
-
-if __name__ == '__main__':
-    #go one folder up to use the same path for loading CIFAR-10 then when executing run.py
-    os.chdir('..')
-    #calling function above, saving distances sorted by value to csv file, visualizing min. distances as histogram
-    dist = 2 #1, 2, np.inf
-    traintrain_ret, traintest_ret, testtest_ret = get_nearest_oppo_dist(dist)
-
-    traintrain = np.sort(traintrain_ret)
-    traintest = np.sort(traintest_ret)
-    testtest = np.sort(testtest_ret)
-    #np.savetxt('./results/traintrain-separation.csv', traintrain, fmt='%1.4f', delimiter=';')
-    #np.savetxt('./results/traintest-separation.csv', traintest, fmt='%1.4f', delimiter=';')
-    #np.savetxt('./results/testtest-separation.csv', testtest, fmt='%1.4f', delimiter=';')
-
-    ret = np.array([[traintrain_ret.min(), traintest_ret.min(), testtest_ret.min()],
-           [traintrain_ret.mean(), traintest_ret.mean(), testtest_ret.mean()]])
-    df_ret = pd.DataFrame(ret, columns=['Train-Train', 'Train-Test', 'Test-Test'], index=['Minimal Distance', 'Mean Distance'])
-    print(df_ret)
-    epsilon_min = ret[0, :].min()/2
-    print("Epsilon: ", epsilon_min)
+def plot_distances(traintrain, traintest, testtest, traintrain_ret, traintest_ret, testtest_ret, n_bins):
 
     y1 = np.arange(len(traintrain_ret)) / len(traintrain_ret)
     y2 = np.arange(len(traintest_ret)) / len(traintest_ret)
     y3 = np.arange(len(testtest_ret)) / len(testtest_ret)
 
-    n_bins = 500
     fig = plt.figure(figsize=[5,3.5], dpi=300)
     fig, axs = plt.subplots(3, 2, sharex='col', tight_layout=True)
     axs[0, 0].hist(traintrain_ret, bins=n_bins)
@@ -122,3 +109,31 @@ if __name__ == '__main__':
     axs2.set_title("Train-Train Separation Distribution")
     #axs2[1].set_title("Train-Train Separation CDF")
     #fig2.savefig(r"results/r-distance-distribution2.svg", dpi=300)
+
+if __name__ == '__main__':
+    #go one folder up to use the same path for loading CIFAR-10 then when executing run.py
+    os.chdir('..')
+
+    dist = 2 #1, 2, np.inf
+    dataset = 'CIFAR100'
+
+    traintrain_ret, traintest_ret, testtest_ret = get_nearest_oppo_dist(dist)
+
+    traintrain = np.sort(traintrain_ret)
+    traintest = np.sort(traintest_ret)
+    testtest = np.sort(testtest_ret)
+    #np.savetxt('./results/traintrain-separation.csv', traintrain, fmt='%1.4f', delimiter=';')
+    #np.savetxt('./results/traintest-separation.csv', traintest, fmt='%1.4f', delimiter=';')
+    #np.savetxt('./results/testtest-separation.csv', testtest, fmt='%1.4f', delimiter=';')
+
+    ret = np.array([[traintrain_ret.min(), traintest_ret.min(), testtest_ret.min()],
+           [traintrain_ret.mean(), traintest_ret.mean(), testtest_ret.mean()]])
+    df_ret = pd.DataFrame(ret, columns=['Train-Train', 'Train-Test', 'Test-Test'], index=['Minimal Distance', 'Mean Distance'])
+    print(df_ret)
+    epsilon_min = ret[0, :].min()/2
+    print("Epsilon: ", epsilon_min)
+
+    plot_distances(traintrain, traintest, testtest, traintrain_ret, traintest_ret, testtest_ret, n_bins=500)
+
+
+    

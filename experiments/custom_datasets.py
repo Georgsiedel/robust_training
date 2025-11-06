@@ -642,11 +642,12 @@ class StyleDataset(Dataset):
         ]
         if dataset_type in ["CIFAR10", "CIFAR100", "GTSRB"]:
             self.transform = transforms.Resize((32, 32), antialias=True)
-        elif dataset_type in ["TinyImageNet", "EuroSAT"]:
+        elif dataset_type in ["TinyImageNet", "EuroSAT", "Wafermap"]:
             self.transform = transforms.Resize((64, 64), antialias=True)
         elif dataset_type == "PCAM":
-            self.transform = transforms.Resize((64, 64), antialias=True)
-        elif dataset_type in ["ImageNet", 'ImageNet-100']:
+            self.transform = transforms.Resize((96, 96), antialias=True)
+        elif dataset_type in ["ImageNet", 'ImageNet-100', 'TreeSAT', 'Casting-Product-Quality', 
+                              'Describable-Textures', 'Flickr-Material']:
             self.transform = transforms.Resize((224, 224), antialias=True)
         else:
             raise AttributeError(f"Dataset: {dataset_type} is an unrecognized dataset")

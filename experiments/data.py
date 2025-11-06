@@ -151,7 +151,7 @@ class DataLoading():
         self.style_feats_path = resolve_path("style_feats", suffix)
         self.write_data_path = resolve_path("write_data", suffix)
 
-    def create_transforms(self, train_aug_strat_orig, train_aug_strat_gen, 
+    def create_transforms(self, train_aug_strat_orig, train_aug_strat_gen=None, 
                           style_orig={'probability': 0.0, 'alpha_min': 1.0, 'alpha_max': 1.0}, 
                           style_gen={'probability': 0.0, 'alpha_min': 1.0, 'alpha_max': 1.0}, 
                           style_and_aug_orig=True, style_and_aug_gen=True, 
