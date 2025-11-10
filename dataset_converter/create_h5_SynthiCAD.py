@@ -99,8 +99,8 @@ def main(args):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--src", default="../data/SynthiCAD/Test_Dataset/images", help="ImageFolder root")
-    ap.add_argument("--out", default="../data/SynthiCAD/SynthiCAD_test.h5", help="Output HDF5 file path")
+    ap.add_argument("--src", default="../data/SynthiCAD/Train_Dataset/images", help="ImageFolder root")
+    ap.add_argument("--out", default="../data/SynthiCAD/SynthiCAD_train.h5", help="Output HDF5 file path")
     ap.add_argument("--compression", action="store_true", help="Use LZF compression for the dataset (fast).")
     args = ap.parse_args()
     main(args)
