@@ -6,11 +6,11 @@ import gc
 
 import torch
 import torchvision.transforms.v2 as transforms
+import kornia
 from sklearn.model_selection import train_test_split
 import torchvision
 from torch.utils.data import Subset, ConcatDataset, RandomSampler, BatchSampler, DataLoader, TensorDataset
 import numpy as np
-from torchvision.datasets import ImageFolder
 import experiments.custom_transforms as custom_transforms
 from run_0 import device
 from experiments.utils import plot_images, CsvHandler
@@ -177,7 +177,7 @@ class DataLoading():
         flip_v = transforms.RandomVerticalFlip()
         r32 = transforms.Resize((32,32), antialias=True)
         r224 = transforms.Resize(224, antialias=True)
-        r232 = transforms.Resize(256, antialias=True)
+        r256 = transforms.Resize(256, antialias=True)
         r320 = transforms.Resize((320,1056), antialias=True)
         r384 = transforms.Resize((384,1280), antialias=True)
         cc224 = transforms.CenterCrop(224)
@@ -190,12 +190,13 @@ class DataLoading():
         if self.dataset in ['ImageNet', 'ImageNet-100', 'TreeSAT', 'Casting-Product-Quality', 
                        'Describable-Textures', 'Flickr-Material']:
             #see https://pytorch.org/blog/how-to-train-state-of-the-art-models-using-torchvision-latest-primitives/ for FixRes recipe
-            self.transforms_preprocess_train = transforms.Compose([t, rrc176]) #rrc224 
-            self.transforms_preprocess_test = transforms.Compose([t, r232, cc224])
+            #no tensor because HDF5 dataset class or Imagefolder with kornia loader (tensor output)
+            self.transforms_preprocess_train = transforms.Compose([rrc224]) #rrc224 rrc176
+            self.transforms_preprocess_test = transforms.Compose([r256, cc224])
 
-        elif self.dataset in ['KITTI_RoadLane', 'KITTI_Distance_Multiclass']:
-            self.transforms_preprocess_train = transforms.Compose([t, r320])
-            self.transforms_preprocess_test = transforms.Compose([t, r384])
+        elif self.dataset in ['KITTI_RoadLane', 'KITTI_Distance_Multiclass']: #no tensor because HDF5 dataset class
+            self.transforms_preprocess_train = transforms.Compose([r320])
+            self.transforms_preprocess_test = transforms.Compose([r384])
 
         elif self.dataset == 'GTSRB':
             self.transforms_preprocess_train = transforms.Compose([t, r32])
@@ -221,10 +222,16 @@ class DataLoading():
             self.transforms_preprocess_train = transforms.Compose([t])
             self.transforms_preprocess_test = transforms.Compose([t])
         
-        if self.resize == True and self.dataset not in ['ImageNet', 'ImageNet-100', 'TreeSAT', 'Casting-Product-Quality', 
+        if self.resize == True and self.dataset in ['ImageNet', 'ImageNet-100', 'TreeSAT', 'Casting-Product-Quality', 
                        'Describable-Textures', 'Flickr-Material']:
-            self.transforms_preprocess_train = transforms.Compose([t, r224])
-            self.transforms_preprocess_test = transforms.Compose([t, r224])
+            self.transforms_preprocess_train = transforms.Compose([rrc224]) 
+            self.transforms_preprocess_test = transforms.Compose([r256, cc224])
+        elif self.resize == True and self.dataset in ['KITTI_RoadLane', 'KITTI_Distance_Multiclass']:
+            self.transforms_preprocess_train = transforms.Compose([r224]) 
+            self.transforms_preprocess_test = transforms.Compose([r224])
+        elif self.resize == True:
+            self.transforms_preprocess_train = transforms.Compose([self.transforms_preprocess_train, r224]) 
+            self.transforms_preprocess_test = transforms.Compose([self.transforms_preprocess_test, r224])
 
         # standard augmentations of training set, without tensor transformation
         if self.dataset in ['ImageNet', 'ImageNet-100', 'Describable-Textures', 'Flickr-Material', 
@@ -295,11 +302,13 @@ class DataLoading():
 
             if self.dataset in ['ImageNet']:
                 self.testset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/val'),
-                                                                transform=transforms.Compose([self.transforms_preprocess_test]))
+                                                                transform=transforms.Compose([self.transforms_preprocess_test]),
+                                                                loader=kornia.io.load_image)
                 if test_only:
                     self.base_trainset = None
                 else:
-                    self.base_trainset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/train'))
+                    self.base_trainset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/train'),
+                                                                loader=kornia.io.load_image)
 
             elif self.dataset in ['TinyImageNet', 'ImageNet-100']:
                 self.testset = HDF5ImageDataset(f'{self.data_path}/{self.dataset}/{self.dataset}_val.h5',
@@ -423,7 +432,8 @@ class DataLoading():
 
         else:
             if self.dataset in ['ImageNet']:
-                base_trainset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/train'))
+                base_trainset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}/train'),
+                                                                loader=kornia.io.load_image)
             elif self.dataset in ['TinyImageNet', 'ImageNet-100', 'TreeSAT', 'Casting-Product-Quality', 'KITTI_RoadLane']:
                 base_trainset = HDF5ImageDataset(f'{self.data_path}/{self.dataset}/{self.dataset}_train.h5')
             elif self.dataset in ['CIFAR10', 'CIFAR100']:
@@ -523,8 +533,12 @@ class DataLoading():
         self.robust_samples = robust_samples
         self.target_size = target_size
         try:
-            self.generated_dataset = np.load(os.path.abspath(f'{self.data_path}/{self.dataset}-add-1m-dm.npz'),
-                                    mmap_mode='r') if generated_ratio > 0.0 else None
+            if self.dataset == "ImageNet-100":
+                self.generated_dataset = torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}-synthetic'),
+                                                                loader=kornia.io.load_image)
+            else:
+                self.generated_dataset = np.load(os.path.abspath(f'{self.data_path}/{self.dataset}-add-1m-dm.npz'),
+                                        mmap_mode='r') if generated_ratio > 0.0 else None
             self.generated_ratio = generated_ratio
         except:
             print(f'No synthetic data found for this dataset in {self.data_path}/{self.dataset}-add-1m-dm.npz')
@@ -557,11 +571,14 @@ class DataLoading():
             if self.num_generated > 0 and self.generated_dataset is not None:
                 generated_indices = np.random.choice(len(self.generated_dataset['label']), size=self.num_generated, replace=False)
 
-                generated_subset = NumpyDataset(
-                    self.generated_dataset['image'][generated_indices],
-                    self.generated_dataset['label'][generated_indices],
-                    transform=self.transforms_preprocess_train
-                )
+                if self.dataset == "ImageNet-100":
+                    generated_subset = SubsetWithTransform(Subset(self.generated_dataset, generated_indices), self.transforms_preprocess_train)
+                else:
+                    generated_subset = NumpyDataset(
+                        self.generated_dataset['image'][generated_indices],
+                        self.generated_dataset['label'][generated_indices],
+                        transform=self.transforms_preprocess_train
+                    )
 
                 if self.stylization_gen is not None:
                     stylized_generated_subset, style_mask_gen = self.stylization_gen(generated_subset)
@@ -587,11 +604,14 @@ class DataLoading():
             if self.num_generated > 0 and self.generated_dataset is not None:
                 generated_indices = np.random.choice(len(self.generated_dataset['label']), size=self.num_generated, replace=False)
 
-                generated_subset = NumpyDataset(
-                    self.generated_dataset['image'][generated_indices],
-                    self.generated_dataset['label'][generated_indices],
-                    transform=self.transforms_preprocess_train
-                )
+                if self.dataset == "ImageNet-100":
+                    generated_subset = SubsetWithTransform(Subset(self.generated_dataset, generated_indices), self.transforms_preprocess_train)
+                else:
+                    generated_subset = NumpyDataset(
+                        self.generated_dataset['image'][generated_indices],
+                        self.generated_dataset['label'][generated_indices],
+                        transform=self.transforms_preprocess_train
+                    )
             else:
                 generated_subset = None
 
@@ -703,7 +723,8 @@ class DataLoading():
                 
                 if self.validontest:
                     intensity_datasets = [torchvision.datasets.ImageFolder(root=os.path.abspath(f'{self.data_path}/{self.dataset}-{set}/' + corruption + '/' + str(intensity)),
-                                                                        transform=self.transforms_preprocess_test) for intensity in range(1, 6)]
+                                                                        transform=self.transforms_preprocess_test,
+                                                                loader=kornia.io.load_image) for intensity in range(1, 6)]
                     if subset == True:
                         selected_indices = np.random.choice(len(intensity_datasets[0]), subsetsize, replace=False)
                         intensity_datasets = [Subset(intensity_dataset, selected_indices) for intensity_dataset in intensity_datasets]

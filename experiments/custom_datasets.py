@@ -2,7 +2,7 @@ import random
 import torch
 import os
 from PIL import Image
-import torchvision.transforms as transforms
+import torchvision.transforms.v2 as transforms
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, Sampler, DataLoader
 import numpy as np
@@ -154,14 +154,15 @@ class HDF5ImageDataset(Dataset):
     - path_images: HDF5 file with an 'images' dataset (or dataset name containing 'images').
     - path_labels: optional HDF5 file; if omitted, 'labels' must be in path_images file.
     - transform: any picklable transform (torchvision transforms are picklable).
+    returns image as torch tensor unless pil_instead_of_tensor is True
     """
 
     def __init__(self, path_images, path_labels=None, transform=None,
-                 convert_to_pil: bool = True):
+                 pil_instead_of_tensor: bool = False):
         self.path_images = path_images
-        self.path_labels = path_labels if path_labels else None
+        self.path_labels = path_labels
         self.transform = transform
-        self.convert_to_pil = convert_to_pil
+        self.pil_instead_of_tensor = pil_instead_of_tensor
 
         # These are file handles, but must not be present during pickling.
         # They are intentionally initialized to None and opened lazily in __getitem__.
@@ -203,9 +204,9 @@ class HDF5ImageDataset(Dataset):
             lbl_entry = self._fh_img[self._key_lbl][idx]
         
         # Handle label for both single-label and multi-label cases.
-        if isinstance(lbl_entry, np.ndarray) and lbl_entry.ndim == 0:
+        if isinstance(lbl_entry, np.ndarray) and lbl_entry.size == 1:
             label = int(lbl_entry.item())
-        elif isinstance(lbl_entry, np.ndarray) and lbl_entry.ndim >= 1:
+        elif isinstance(lbl_entry, np.ndarray) and lbl_entry.size >= 1:
             label = torch.from_numpy(lbl_entry.astype(np.float32))
         else: # h5py may return numpy scalar types (e.g. np.int32) for scalars
             arr = np.array(lbl_entry)
@@ -214,14 +215,15 @@ class HDF5ImageDataset(Dataset):
             else:
                 label = torch.from_numpy(arr.astype(np.float32))
 
-        # Optionally convert to PIL Image if transform expects it (ImageFolder-style)
-        if self.convert_to_pil and isinstance(img, np.ndarray):
+        # Optionally convert to PIL Image (ImageFolder-style)
+        if self.pil_instead_of_tensor:
             # ensure uint8
             if img.dtype != np.uint8:
                 img = img.astype(np.uint8)
             img = Image.fromarray(img)
-        else:
-            img = img
+        else: #convert directly to torch tensor
+            t = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)])
+            img = t(img)
 
         if self.transform is not None:
             img = self.transform(img)
@@ -651,7 +653,7 @@ class StyleDataset(Dataset):
             self.transform = transforms.Resize((224, 224), antialias=True)
         else:
             raise AttributeError(f"Dataset: {dataset_type} is an unrecognized dataset")
-        self.transform = transforms.Compose([self.transform, transforms.ToTensor()])
+        self.transform = transforms.Compose([self.transform, transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)])
 
     def __len__(self):
         return len(self.image_paths)

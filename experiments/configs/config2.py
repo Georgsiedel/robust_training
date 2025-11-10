@@ -13,9 +13,11 @@ noise_patch_scale = {'lower': 0.2, 'upper': 0.7}
 combine_train_corruptions = True #augment the train dataset with all corruptions
 concurrent_combinations = 1 #only has an effect if combine_train_corruption is True
 
-batchsize = 64
+batchsize = 32
 minibatchsize = 8
-dataset = 'TreeSAT' #ImageNet #CIFAR100 #CIFAR10 #TinyImageNet
+#ImageNet ImageNet-100 TreeSAT Describable-Textures Flickr-Material KITTI_RoadLane KITTI_Distance_Multiclass 
+# CIFAR100 CIFAR10 TinyImageNet PCAM GTSRB WaferMap EuroSAT
+dataset = 'WaferMap' 
 generated_ratio = 0.0
 normalize = True
 validontest = True
@@ -34,8 +36,8 @@ number_workers = 2
 modeltype = 'ResNet50'
 modelparams = {}
 resize = False
-style_orig = {'probability': 0.2, 'alpha_min': 1.0, 'alpha_max': 1.0}
-style_gen = {'probability': 0.2, 'alpha_min': 0.1, 'alpha_max': 1.0}
+style_orig = {'probability': 0.05, 'alpha_min': 1.0, 'alpha_max': 1.0}
+style_gen = {'probability': 0.0, 'alpha_min': 0.1, 'alpha_max': 1.0}
 train_aug_strat_orig = 'TrivialAugmentWide' #TrivialAugmentWide, RandAugment, AutoAugment, AugMix
 train_aug_strat_gen = 'None' #TrivialAugmentWide, RandAugment, AutoAugment, AugMix
 style_and_aug_orig = True

@@ -4,77 +4,26 @@ https://github.com/yangarbiter/robust-local-lipschitz
 and the adaptation of the method here:
 https://github.com/Georgsiedel/minimal-separation-corruption-robustness
 """
+import os, sys
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+module_path = os.path.abspath(os.path.dirname(__file__))
+
+if module_path not in sys.path:
+    sys.path.append(module_path)
+
+import argparse
 import torch
-import torchvision
-import torchvision.transforms as transforms
-from sklearn.neighbors import NearestNeighbors
-from joblib import Parallel, delayed
 import numpy as np
 import pandas as pd
 import time
 import matplotlib.pyplot as plt
-import os
-from .data import DataLoading
-from .custom_datasets import SubsetWithTransform
+from tqdm import tqdm
+import torchvision.transforms.v2 as transforms
+import random
 
-# calculate r-separation distance of dataset
-def get_nearest_oppo_dist(norm, dataset):
-
-    data_class = DataLoading(dataset=dataset)
-    data_class.create_transforms(train_aug_strat_orig='None', train_aug_strat_gen='None')
-    data_class.load_base_data()
-    trainset = SubsetWithTransform(data_class.base_trainset, data_class.transforms_preprocess_train)
-    testset = data_class.testset
-
-    #for large datasets, this can only be done with a lot of RAM. the entire set is loaded.
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=len(trainset), shuffle=False)
-    testloader = torch.utils.data.DataLoader(testset, batch_size=len(testset), shuffle=False)
-
-    for _, (inputs, targets) in enumerate(trainloader):
-        train_x = inputs
-        train_y = targets
-        if len(train_x.shape) > 2:
-            train_x = train_x.reshape(len(train_x), -1)
-
-    for _, (inputs, targets) in enumerate(testloader):
-        test_x = inputs
-        test_y = targets
-        if len(test_x.shape) > 2:
-            test_x = test_x.reshape(len(test_x), -1)
-    print("Data loading done for distance evaluation")
-
-    def helper_train(yi):
-        return NearestNeighbors(n_neighbors=1,
-                                metric='minkowski', p=norm, n_jobs=-1).fit(train_x[train_y != yi])
-    nns_train = Parallel(n_jobs=10)(delayed(helper_train)(yi) for yi in np.unique(train_y))
-
-    def helper_test(yi):
-        return NearestNeighbors(n_neighbors=1,
-                                metric='minkowski', p=norm, n_jobs=-1).fit(test_x[test_y != yi])
-    nns_test = Parallel(n_jobs=10)(delayed(helper_test)(yi) for yi in np.unique(test_y))
-
-    traintrain_ret = np.zeros(len(train_x))
-    traintest_ret = np.zeros(len(test_x))
-    testtest_ret = np.zeros(len(test_x))
-    time0 = time.perf_counter()
-    for yi in np.unique(train_y):
-        dist, _ = nns_train[yi].kneighbors(train_x[train_y == yi], n_neighbors=1)
-        traintrain_ret[np.where(train_y == yi)[0]] = dist[:, 0]
-        if yi == 0:
-            time1 = time.perf_counter()
-            print("First Train Train evaluation done after ", (time1 - time0), "seconds. Distance calculation time estimation: ", (time1 - time0)*12.5, "seconds.")
-    for yi in np.unique(train_y):
-        dist, _ = nns_train[yi].kneighbors(test_x[test_y == yi], n_neighbors=1)
-        traintest_ret[np.where(test_y == yi)[0]] = dist[:, 0]
-
-    for yi in np.unique(test_y):
-        dist, _ = nns_test[yi].kneighbors(test_x[test_y == yi], n_neighbors=1)
-        testtest_ret[np.where(test_y == yi)[0]] = dist[:, 0]
-    time2 = time.perf_counter()
-    print(time2 - time0)
-
-    return traintrain_ret, traintest_ret, testtest_ret
+from data import DataLoading
+from custom_datasets import SubsetWithTransform
 
 def plot_distances(traintrain, traintest, testtest, traintrain_ret, traintest_ret, testtest_ret, n_bins):
 
@@ -110,30 +59,186 @@ def plot_distances(traintrain, traintest, testtest, traintrain_ret, traintest_re
     #axs2[1].set_title("Train-Train Separation CDF")
     #fig2.savefig(r"results/r-distance-distribution2.svg", dpi=300)
 
-if __name__ == '__main__':
-    #go one folder up to use the same path for loading CIFAR-10 then when executing run.py
-    os.chdir('..')
+def int_or_inf(x):
+    if x.lower() in ("inf", "np.inf", "infinity"):
+        return np.inf
+    return int(x)
 
-    dist = 2 #1, 2, np.inf
-    dataset = 'CIFAR100'
-
-    traintrain_ret, traintest_ret, testtest_ret = get_nearest_oppo_dist(dist)
-
-    traintrain = np.sort(traintrain_ret)
-    traintest = np.sort(traintest_ret)
-    testtest = np.sort(testtest_ret)
-    #np.savetxt('./results/traintrain-separation.csv', traintrain, fmt='%1.4f', delimiter=';')
-    #np.savetxt('./results/traintest-separation.csv', traintest, fmt='%1.4f', delimiter=';')
-    #np.savetxt('./results/testtest-separation.csv', testtest, fmt='%1.4f', delimiter=';')
-
-    ret = np.array([[traintrain_ret.min(), traintest_ret.min(), testtest_ret.min()],
-           [traintrain_ret.mean(), traintest_ret.mean(), testtest_ret.mean()]])
-    df_ret = pd.DataFrame(ret, columns=['Train-Train', 'Train-Test', 'Test-Test'], index=['Minimal Distance', 'Mean Distance'])
-    print(df_ret)
-    epsilon_min = ret[0, :].min()/2
-    print("Epsilon: ", epsilon_min)
-
-    plot_distances(traintrain, traintest, testtest, traintrain_ret, traintest_ret, testtest_ret, n_bins=500)
-
-
+def _compute_min_dists(query_loader, db_loader, device, norm):
+    """
+    Helper function to compute minimum opposite-class distances.
     
+    Iterates through query_loader. For each query_batch, it iterates
+    through the entire db_loader, computes distances, masks same-class
+    neighbors, and finds the minimum.
+    """
+    all_min_dists = []
+    
+    print(f"Starting distance calculation...")
+    # Outer loop: one batch of query points at a time
+    for query_x, query_y in tqdm(query_loader):
+        
+        query_x = query_x.to(device)
+        query_y = query_y.to(device)
+        
+        # Ensure data is flattened
+        if len(query_x.shape) > 2:
+            query_x = query_x.reshape(query_x.shape[0], -1)
+            
+        # Store min distances for this query batch
+        batch_min_dists = torch.full((query_x.shape[0],), float('inf'), device=device)
+
+        # Inner loop: compare against all batches in the database
+        for db_x, db_y in db_loader:
+            
+            db_x = db_x.to(device)
+            db_y = db_y.to(device)
+            
+            # Ensure data is flattened
+            if len(db_x.shape) > 2:
+                db_x = db_x.reshape(db_x.shape[0], -1)
+            
+            # Calculate pairwise distances between query and db batch
+            # Shape: (query_batch_size, db_batch_size)
+            dists = torch.cdist(query_x, db_x, p=norm)
+            
+            # Create a mask to find *different* classes
+            # Shape: (query_batch_size, db_batch_size) for single-label, 
+            # Shape: (query_batch_size, db_batch_size, n_labels) for multi-label
+            broadcasted_inequality = (query_y.unsqueeze(1) != db_y.unsqueeze(0))
+            
+            if query_y.ndim == 1:
+                # single-label case. broadcasted_inequality is already [N, M]
+                mask = broadcasted_inequality
+            else:
+                # multi-label case. We want [N, M], where True means *any* of the C elements were different.
+                mask = broadcasted_inequality.any(dim=-1)
+            
+            # Invalidate distances to same-class points by setting them to infinity
+            dists[~mask] = float('inf')
+            
+            # Find the minimum distance in this db_batch for each query point
+            min_dists_in_batch, _ = torch.min(dists, dim=1)
+            
+            # Update the overall minimum for the query batch
+            batch_min_dists = torch.minimum(batch_min_dists, min_dists_in_batch)
+        
+        # We have the final minimum distances for this query batch
+        all_min_dists.append(batch_min_dists.cpu())
+
+    # Concatenate results from all query batches
+    return torch.cat(all_min_dists).numpy()
+
+
+# calculate r-separation distance of dataset
+def get_nearest_oppo_dist(norm, dataset, batch_size):
+
+    # Handle 'inf' from argparse
+    if norm == np.inf:
+        p_norm = float('inf')
+    else:
+        p_norm = norm
+        
+    device = torch.device("cpu")# torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
+    data_class = DataLoading(dataset=dataset)
+    data_class.create_transforms(train_aug_strat_orig='None', train_aug_strat_gen='None')
+    
+    #Adjust training image preprocessing. 
+    #Normally uses lower-size training images (FixRes recipe) and random resized crop that are different to test transforms.
+    #This could induce bias, hence we now use the test images preprocessing on train image as well.
+    #Distance is measured with those transforms for later evaluation on test images.
+    if dataset in ['ImageNet', 'ImageNet-100', 'TreeSAT', 'Casting-Product-Quality', 
+                       'Describable-Textures', 'Flickr-Material']:
+        data_class.transforms_preprocess_train = transforms.Compose([transforms.Resize(256, antialias=True), 
+                                                                     transforms.CenterCrop(224)])
+    elif dataset in ['KITTI_RoadLane', 'KITTI_Distance_Multiclass']:
+        data_class.transforms_preprocess_train = transforms.Resize((384,1280), antialias=True)
+
+    data_class.load_base_data()
+    trainset = SubsetWithTransform(data_class.base_trainset, data_class.transforms_preprocess_train)
+    testset = data_class.testset
+
+    print(f"Loading {dataset}.")
+    # Load data in batches, not all at once
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=False, num_workers=2)
+    trainloader_inner = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=False, num_workers=16)
+
+    # --- NEW CALCULATION ---
+    print(f"Starting Train-Train evaluation.")
+    start_time = time.perf_counter()
+    # Query: train, Database: train
+    traintrain_ret = _compute_min_dists(trainloader, trainloader_inner, device, p_norm)
+    print(f"Train-Train done in {time.perf_counter() - start_time:.2f}s")
+
+    testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=2)
+
+    print(f"Starting Train-Test evaluation.")
+    start_time = time.perf_counter()
+    # Query: test, Database: train
+    traintest_ret = _compute_min_dists(testloader, trainloader_inner, device, p_norm)
+    print(f"Train-Test done in {time.perf_counter() - start_time:.2f}s")
+
+    testloader_inner = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=16)
+    
+    print(f"Starting Test-Test evaluation.")
+    start_time = time.perf_counter()
+    # Query: test, Database: test
+    testtest_ret = _compute_min_dists(testloader, testloader_inner, device, p_norm)
+    print(f"Test-Test done in {time.perf_counter() - start_time:.2f}s")
+
+    return traintrain_ret, traintest_ret, testtest_ret
+
+if __name__ == '__main__':
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--norm_distance", type=int_or_inf, default='inf', help="Integer or 'inf' for the norm to be measured")
+    parser.add_argument('--dataset', default='CIFAR10', type=str, help='Dataset to calculate distance for')
+    parser.add_argument('--batch_size', default=1000, type=int, help='Batch size for GPU computation')
+
+    args = parser.parse_args()
+
+    for dataset in ['KITTI_Distance_Multiclass', 'WaferMap', 
+                    'TreeSAT', 'Casting-Product-Quality', 'EuroSAT', 'TinyImageNet', 'PCAM', 'ImageNet-100', 'ImageNet']:
+        
+        for norm_distance in [1, 2, np.inf]:
+
+            #random seeding for reproducibility (this is only important should random preprocessing be used - 
+            #here we use only deterministic test image preprocessing all around, so seed should not make a difference.)
+            torch.manual_seed(0)
+            torch.cuda.manual_seed(0)
+            np.random.seed(0)
+            random.seed(0)
+
+            print(f"Calculating {norm_distance}-norm class-separation for dataset {dataset} with batch size {args.batch_size}.")
+
+            traintrain_ret, traintest_ret, testtest_ret = get_nearest_oppo_dist(norm_distance, dataset, args.batch_size)
+
+            traintrain = np.sort(traintrain_ret[traintrain_ret != 0])
+            traintest = np.sort(traintest_ret[traintest_ret != 0])
+            testtest = np.sort(testtest_ret[testtest_ret != 0])
+            print(traintrain[0:10])
+            print(traintest[0:10])
+            print(testtest[0:10])
+                
+            ret = np.array([[len(traintrain_ret), len(traintest_ret), len(testtest_ret)],
+                            [traintrain_ret.mean(), traintest_ret.mean(), testtest_ret.mean()],
+                            [traintrain_ret.min(), traintest_ret.min(), testtest_ret.min()],
+                            [traintrain[1], traintest[1], testtest[1]],
+                            [traintrain[2], traintest[2], testtest[2]],
+                            [traintrain[3], traintest[3], testtest[3]],
+                            [traintrain[4], traintest[4], testtest[4]],
+                            [traintrain[5], traintest[5], testtest[5]],
+                            [traintrain[6], traintest[6], testtest[6]],
+                            [traintrain[7], traintest[7], testtest[7]],
+                            [traintrain[8], traintest[8], testtest[8]],
+                            [traintrain[9], traintest[9], testtest[9]]])
+            df_ret = pd.DataFrame(ret, 
+                                columns=['Train-Train', 'Train-Test', 'Test-Test'], 
+                                index=['non-zero images','Mean Distance', 'Minimal Distance', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th'])
+            print(df_ret)
+            epsilon_min = ret[2, :].min()/2
+            print("Epsilon: ", epsilon_min)
+
+            df_ret.to_csv(f"./results/{dataset}/class_separation_distance_{norm_distance}_norm.csv", index=True, header=True, sep=';', float_format='%1.6f', decimal=',')

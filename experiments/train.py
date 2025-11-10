@@ -201,6 +201,7 @@ def train_epoch(pbar):
                                            args.concurrent_combinations, args.noise_sparsity, args.noise_patch_scale['lower'],
                                            args.noise_patch_scale['upper'], Dataloader.generated_ratio, args.n2n_deepaugment, 
                                            style_feats=style_feats, **args.int_adain_params)
+            
             if args.trades_loss:
                 with torch.amp.autocast(device_type=device, enabled=False): # recommended for numerical stability
                     loss = losses.trades_loss(model,
@@ -333,7 +334,6 @@ if __name__ == '__main__':
 
     # Construct model
     print(f'\nBuilding {args.modeltype} model with {args.modelparams} | Loss Function: {args.loss}, Stability Loss: {args.robust_loss}, Trades Loss: {args.trades_loss}')
-    
     model_class = getattr(models, args.modeltype)
     model = model_class(dataset=args.dataset, normalized =args.normalize, num_classes=Dataloader.num_classes,
                         factor=Dataloader.factor, **args.modelparams)

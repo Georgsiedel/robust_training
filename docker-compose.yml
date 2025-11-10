@@ -23,8 +23,10 @@ services:
       - ./results:/workspace/results
       - ./experiments/configs:/workspace/experiments/configs
       - ./experiments/train.py:/workspace/experiments/train.py
+      - ./experiments/distance.py:/workspace/experiments/distance.py
       - ./experiments/data.py:/workspace/experiments/data.py
       - ./experiments/custom_transforms.py:/workspace/experiments/custom_transforms.py
+      - ./experiments/custom_datasets.py:/workspace/experiments/custom_datasets.py
       - ./run_0.py:/workspace/run_0.py
       - ./run_1.py:/workspace/run_1.py
       - ./run_2.py:/workspace/run_2.py
