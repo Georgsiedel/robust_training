@@ -1,0 +1,3 @@
+[submodule "NoisyMix"]
+	path = NoisyMix
+	url = https://github.com/georgsiedel/NoisyMix.git
