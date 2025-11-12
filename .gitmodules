@@ -1,3 +1,6 @@
 [submodule "NoisyMix"]
 	path = NoisyMix
 	url = https://github.com/georgsiedel/NoisyMix.git
+[submodule "latent-diffusion"]
+	path = latent-diffusion
+	url = https://github.com/georgsiedel/latent-diffusion.git
