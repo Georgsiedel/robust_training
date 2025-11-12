@@ -15,7 +15,9 @@ concurrent_combinations = 1 #only has an effect if combine_train_corruption is T
 
 batchsize = 256
 minibatchsize = 8
-dataset = 'CIFAR100' #ImageNet #CIFAR100 #CIFAR10 #TinyImageNet
+#ImageNet ImageNet-100 TreeSAT Describable-Textures Flickr-Material KITTI_RoadLane KITTI_Distance_Multiclass 
+# CIFAR100 CIFAR10 TinyImageNet PCAM GTSRB WaferMap EuroSAT SynthiCAD
+dataset = 'ImageNet-100' 
 generated_ratio = 0.0
 normalize = True
 validontest = True
@@ -25,19 +27,19 @@ lrschedule = 'CosineAnnealingWarmRestarts'
 learningrate = 0.1
 epochs = 300
 lrparams = {'T_0': 20, 'T_mult': 2}
-warmupepochs = 0
+warmupepochs = 5
 earlystop = False
 earlystopPatience = 15
 optimizer = 'SGD'
-optimizerparams = {'momentum': 0.9, 'weight_decay': 1e-4, 'nesterov': True}
-number_workers = 2
-modeltype = 'WideResNet_28_4'
-modelparams = {'dropout_rate': 0.2, 'activation_function': 'silu'}
+optimizerparams = {'momentum': 0.9, 'weight_decay': 2e-5, 'nesterov': False}
+number_workers = 4
+modeltype = 'Swin_T'
+modelparams = {}
 resize = False
-style_orig = {'probability': 0.2, 'alpha_min': 1.0, 'alpha_max': 1.0}
-style_gen = {'probability': 0.2, 'alpha_min': 0.1, 'alpha_max': 1.0}
-train_aug_strat_orig = 'TrivialAugmentWide' #TrivialAugmentWide, RandAugment, AutoAugment, AugMix
-train_aug_strat_gen = 'None' #TrivialAugmentWide, RandAugment, AutoAugment, AugMix
+style_orig = {'probability': 0.0, 'alpha_min': 1.0, 'alpha_max': 1.0}
+style_gen = {'probability': 0.0, 'alpha_min': 0.1, 'alpha_max': 1.0}
+train_aug_strat_orig = 'AugMix' #TrivialAugmentWide, RandAugment, AutoAugment, AugMix
+train_aug_strat_gen = 'AugMix' #TrivialAugmentWide, RandAugment, AutoAugment, AugMix
 style_and_aug_orig = True
 style_and_aug_gen = False
 loss = 'CrossEntropyLoss'
@@ -49,8 +51,8 @@ robust_lossparams = {'num_splits': 3, 'alpha': 12} #jsd if 3 splits, KL divergen
 mixup = {'alpha': 0.2, 'p': 0.0} #default alpha 0.2 #If both mixup and cutmix are >0, mixup or cutmix are selected by 0.5 chance
 cutmix = {'alpha': 1.0, 'p': 0.0} # default alpha 1.0 #If both mixup and cutmix are >0, mixup or cutmix are selected by 0.5 chance
 manifold = {'apply': False, 'noise_factor': 3}
-n2n_deepaugment = False
-RandomEraseProbability = 0.0
+n2n_deepaugment = True
+RandomEraseProbability = 0.3
 swa = {'apply': True, 'start_factor': 0.9, 'lr_factor': 0.2}
 
 #define train and test corruptions:

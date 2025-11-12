@@ -202,16 +202,11 @@ def train_epoch(pbar):
                                            args.noise_patch_scale['upper'], Dataloader.generated_ratio, args.n2n_deepaugment, 
                                            style_feats=style_feats, **args.int_adain_params)
             
-            if args.trades_loss:
-                with torch.amp.autocast(device_type=device, enabled=False): # recommended for numerical stability
-                    loss = losses.trades_loss(model,
-                    inputs,
-                    targets,
-                    optimizer,
-                    **args.trades_lossparams)
-            else:    
-                criterion.update(model, optimizer)
-                loss = criterion(outputs, mixed_targets, inputs, targets)
+            loss = criterion.calculate_standard_and_robust_loss(outputs, mixed_targets)
+
+            with torch.amp.autocast(device_type=device, enabled=False): # recommended for numerical stability
+                loss = criterion.add_trades_loss(loss, model, optimizer, inputs, targets)
+
 
         Scaler.scale(loss).backward()
         Scaler.unscale_(optimizer)
@@ -227,8 +222,8 @@ def train_epoch(pbar):
         _, predicted = outputs.max(1)
         
         if args.dataset in ['WaferMap', 'KITTI_Distance_Multiclass']:
-            predicted = (outputs > 0.5).float()    
-            mixed_targets = (mixed_targets > 0.5).float()   
+            predicted = (torch.sigmoid(outputs) > 0.5).float()
+            mixed_targets = (mixed_targets > 0.5).float()
         elif np.ndim(mixed_targets) == 2:    
             _, mixed_targets = mixed_targets.max(1)
 
@@ -274,7 +269,7 @@ def valid_epoch(pbar, net):
             test_loss += loss.item()
 
             if args.dataset in ['WaferMap', 'KITTI_Distance_Multiclass']:
-                predicted = (outputs > 0.5).float()    
+                predicted = (torch.sigmoid(outputs) > 0.5).float()
             else:
                 _, predicted = outputs.max(1)
 
@@ -331,7 +326,7 @@ if __name__ == '__main__':
                                  args.stylization_first, args.minibatchsize)
     Dataloader.load_base_data(test_only=False)
     testsets_c = Dataloader.load_data_c(subset=True, subsetsize=min(200, int(len(Dataloader.testset)/10)), valid_run=True) if args.validonc else None
-
+    
     # Construct model
     print(f'\nBuilding {args.modeltype} model with {args.modelparams} | Loss Function: {args.loss}, Stability Loss: {args.robust_loss}, Trades Loss: {args.trades_loss}')
     model_class = getattr(models, args.modeltype)
@@ -345,7 +340,7 @@ if __name__ == '__main__':
     schedule = getattr(optim.lr_scheduler, args.lrschedule)
     scheduler = schedule(optimizer, **args.lrparams)
     if args.warmupepochs > 0:
-        warmupscheduler = optim.lr_scheduler.LinearLR(optimizer, start_factor=0.1, end_factor=1.0, total_iters=args.warmupepochs)
+        warmupscheduler = optim.lr_scheduler.LinearLR(optimizer, start_factor=0.01, end_factor=1.0, total_iters=args.warmupepochs)
         scheduler = optim.lr_scheduler.SequentialLR(optimizer, schedulers=[warmupscheduler, scheduler], milestones=[args.warmupepochs])
 
     if args.swa['apply'] == True:

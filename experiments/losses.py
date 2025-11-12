@@ -23,28 +23,41 @@ class Criterion(nn.Module):
         loss = getattr(torch.nn, standard_loss)
         self.standard_criterion = loss(**kwargs)
         self.robust_samples = num_splits - 1 if robust_loss == True else 0
+        self.trades_loss = trades_loss
+        self.robust_loss = robust_loss
         if trades_loss == True:
-            self.trades_criterion = Trades(step_size=step_size, epsilon=epsilon, perturb_steps=perturb_steps, beta=beta,
-                                           distance=distance)
-        else:
-            self.trades_criterion = None
-        if robust_loss == True and num_splits == 3:
-            self.robust_criterion = JsdCrossEntropy(num_splits=num_splits, alpha=alpha)
-        elif robust_loss == True and num_splits == 2:
-            self.robust_criterion = JsdCrossEntropy(num_splits=num_splits, alpha=alpha)
-        else:
-            self.robust_criterion = None
+            self.step_size=step_size
+            self.epsilon=epsilon
+            self.perturb_steps=perturb_steps
+            self.beta=beta
+            self.distance=distance
+        if robust_loss == True:
+            self.num_splits=num_splits
+            self.alpha=alpha
 
-    def __call__(self, outputs, mixed_targets, inputs=None, targets=None):
+    def calculate_standard_and_robust_loss(self, outputs, mixed_targets):
         split_size = outputs.shape[0] // (self.robust_samples+1)
         loss = self.standard_criterion(outputs[:split_size], mixed_targets)
-        if self.trades_criterion is not None:
-            if inputs == None or targets == None:
-                print('no original inputs/target given for Trades loss calculation')
-            trades_loss = self.trades_criterion(inputs[:split_size], targets)
+        
+        if self.robust_loss:
+            loss += jsd_loss(outputs, self.num_splits, self.alpha)
+
+        return loss
+    
+    def add_trades_loss(self, loss, model, optimizer, inputs, targets):
+        split_size = inputs.shape[0] // (self.robust_samples+1)
+
+        if self.trades_loss:
+            trades_loss = trades_loss(model=model, 
+                                      x_natural=inputs[:split_size], 
+                                      y=targets, 
+                                      optimizer=optimizer, 
+                                      step_size=self.step_size,                                 
+                                      epsilon=self.epsilon,                                   
+                                      perturb_steps=self.perturb_steps,                                    
+                                      beta=self.beta,                                 
+                                      distance=self.distance)
             loss += trades_loss
-        if self.robust_criterion is not None:
-            loss += self.robust_criterion(outputs, mixed_targets)
 
         return loss
 
@@ -52,96 +65,8 @@ class Criterion(nn.Module):
         loss = self.standard_criterion(outputs, mixed_targets)
         return loss
 
-    def update(self, model, optimizer):
-        if self.trades_criterion is not None:
-            self.trades_criterion.update(model, optimizer)
-
-class Trades(nn.Module):
-    """
-    TRADES loss for training adversarially robust models
-    based on https://github.com/yaodongyu/TRADES built into class
-    """
-
-    def __init__(self, step_size=0.003, epsilon=0.031, perturb_steps=10, beta=1.0, distance='l_inf'):
-        super().__init__()
-        self.model = None
-        self.optimizer = None
-        self.step_size = step_size
-        self.epsilon = epsilon
-        self.perturb_steps = perturb_steps
-        self.beta = beta
-        self.distance = distance
-
-    def update(self, model, optimizer):
-        self.model = model
-        self.optimizer = optimizer
-
-    def __call__(self, x_natural, y):
-        # define KL-loss
-        criterion_kl = nn.KLDivLoss(reduction='sum')
-
-        self.model.eval()
-        batch_size = len(x_natural)
-        # generate adversarial example
-        x_adv = x_natural.detach() + 0.001 * torch.randn(x_natural.shape).cuda().detach()
-        x_adv = torch.clamp(x_adv, 0.0, 1.0)
-        p_natural = F.softmax(self.model(x_natural), dim=1)
-
-        if self.distance == 'l_inf':
-            for _ in range(self.perturb_steps):
-                x_adv.requires_grad_()
-                with torch.enable_grad():
-                    loss_kl = criterion_kl(F.log_softmax(self.model(x_adv), dim=1),
-                                           p_natural)
-                grad = torch.autograd.grad(loss_kl, [x_adv])[0]
-                x_adv = x_adv.detach() + self.step_size * torch.sign(grad.detach())
-                x_adv = torch.min(torch.max(x_adv, x_natural - self.epsilon), x_natural + self.epsilon)
-                x_adv = torch.clamp(x_adv, 0.0, 1.0)
-        elif self.distance == 'l_2':
-            delta = 0.001 * torch.randn(x_natural.shape).cuda().detach()
-            delta = Variable(delta.data, requires_grad=True)
-
-            # Setup optimizers
-            optimizer_delta = optim.SGD([delta], lr=self.epsilon / self.perturb_steps * 2)
-
-            for _ in range(self.perturb_steps):
-                adv = x_natural + delta
-
-                # optimize
-                optimizer_delta.zero_grad()
-                with torch.enable_grad():
-                    loss = (-1) * criterion_kl(F.log_softmax(self.model(adv), dim=1),
-                                           p_natural)
-                loss.backward(retain_graph=True)
-                # renorming gradient
-                grad_norms = delta.grad.view(batch_size, -1).norm(p=2, dim=1)
-                delta.grad.div_(grad_norms.view(-1, 1, 1, 1))
-                # avoid nan or inf if gradient is 0
-                if (grad_norms == 0).any():
-                    delta.grad[grad_norms == 0] = torch.randn_like(delta.grad[grad_norms == 0])
-                optimizer_delta.step()
-
-                # projection
-                delta.data.add_(x_natural)
-                delta.data.clamp_(0, 1).sub_(x_natural)
-                delta.data.renorm_(p=2, dim=0, maxnorm=self.epsilon)
-            x_adv = Variable(x_natural + delta, requires_grad=False)
-        else:
-            raise ValueError(f'Attack={self.distance} not supported for TRADES training!')
-
-        self.model.train()
-        x_adv = Variable(torch.clamp(x_adv, 0.0, 1.0), requires_grad=False)
-        # zero gradient
-        self.optimizer.zero_grad()
-        # calculate robust loss
-
-        loss_robust = (1.0 / batch_size) * criterion_kl(F.log_softmax(self.model(x_adv)[0], dim=1),
-                                                    p_natural)
-        loss_robust = self.beta * loss_robust
-        return loss_robust
-
-class JsdCrossEntropy(nn.Module):
-    """ Jensen-Shannon Divergence + Cross-Entropy Loss
+def jsd_loss(output, num_splits=3, alpha=12):
+    """ Jensen-Shannon Divergence loss (no cross entropy)
 
     Based on impl here: https://github.com/google-research/augmix/blob/master/imagenet.py
     From paper: 'AugMix: A Simple Data Processing Method to Improve Robustness and Uncertainty -
@@ -149,25 +74,18 @@ class JsdCrossEntropy(nn.Module):
 
     Hacked together by / Copyright 2020 Ross Wightman
     """
-    def __init__(self, num_splits=3, alpha=12):
-        super().__init__()
-        self.num_splits = num_splits
-        self.alpha = alpha
+    split_size = output.shape[0] // num_splits
+    assert split_size * num_splits == output.shape[0]
+    logits_split = torch.split(output, split_size)
 
-    def __call__(self, output, target):
-        split_size = output.shape[0] // self.num_splits
-        assert split_size * self.num_splits == output.shape[0]
-        logits_split = torch.split(output, split_size)
+    # Cross-entropy is only computed on clean images
+    probs = [F.softmax(logits, dim=1) for logits in logits_split]
 
-        # Cross-entropy is only computed on clean images
-        probs = [F.softmax(logits, dim=1) for logits in logits_split]
-
-        # Clamp mixture distribution to avoid exploding KL divergence
-        logp_mixture = torch.clamp(torch.stack(probs).mean(axis=0), 1e-7, 1).log()
-        loss = self.alpha * sum([F.kl_div(
-            logp_mixture, p_split, reduction='batchmean') for p_split in probs]) / self.num_splits
-        return loss
-
+    # Clamp mixture distribution to avoid exploding KL divergence
+    logp_mixture = torch.clamp(torch.stack(probs).mean(axis=0), 1e-7, 1).log()
+    loss = alpha * sum([F.kl_div(
+        logp_mixture, p_split, reduction='batchmean') for p_split in probs]) / num_splits
+    return loss
 
 def trades_loss(model,
                 x_natural,

@@ -157,14 +157,14 @@ class ToFloat32:
     def __call__(self, x):
         return x.to(torch.float32)
 
-class DivideBy2:
+class DivideBy3:
     def __call__(self, x):
-        return x / 2.0
+        return x / 3.0
     
 def build_transform_c_bar(name, severity, dataset, resize):
     assert dataset in ['CIFAR10', 'CIFAR100', 'ImageNet', 'ImageNet-100', 'TinyImageNet', 'GTSRB', 'PCAM', 
                        'EuroSAT', 'WaferMap', 'Casting-Product-Quality', 'Describable-Textures', 'Flickr-Material', 
-                       'TreeSAT', 'KITTI_Distance_Multiclass', 'KITTI_RoadLane'],\
+                       'TreeSAT', 'KITTI_Distance_Multiclass', 'KITTI_RoadLane', 'SynthiCAD'],\
             "Dataset not defined and functionality not explored for c-bar benchmark."
     
     if dataset in ['CIFAR10', 'CIFAR100', 'GTSRB']: 
@@ -411,10 +411,6 @@ class BatchStyleTransforms:
                 - A tensor batch of images where a fraction is stylized, with the same shape as input.
                 - A boolean list indicating which images were stylized.
         """
-        #if no images are to be stylized, return original images and all-false style mask
-        if self.stylized_ratio == 0.0:
-            return images, [False] * len(images)
-
         num_images = len(images)
         num_stylized = int(num_images * self.stylized_ratio)
 
@@ -507,8 +503,6 @@ class DuringTrainingTransforms:
     def __call__(self, x):
         total = x.size(0)
         synth_samples = int(total * self.synthetic_ratio)
-        # Clamp synth_samples to [0, total] to avoid overflows
-        synth_samples = max(0, min(synth_samples, total))
 
         if self.robust_samples == 2:
             subset1 = x[int(x.size(0) / 3):int(x.size(0) * 2 / 3)]

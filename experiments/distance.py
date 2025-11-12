@@ -24,6 +24,7 @@ import random
 
 from data import DataLoading
 from custom_datasets import SubsetWithTransform
+import custom_transforms
 
 def plot_distances(traintrain, traintest, testtest, traintrain_ret, traintest_ret, testtest_ret, n_bins):
 
@@ -100,6 +101,7 @@ def _compute_min_dists(query_loader, db_loader, device, norm):
             
             # Calculate pairwise distances between query and db batch
             # Shape: (query_batch_size, db_batch_size)
+
             dists = torch.cdist(query_x, db_x, p=norm)
             
             # Create a mask to find *different* classes
@@ -139,7 +141,7 @@ def get_nearest_oppo_dist(norm, dataset, batch_size):
     else:
         p_norm = norm
         
-    device = torch.device("cpu")# torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
     data_class = DataLoading(dataset=dataset)
@@ -150,11 +152,20 @@ def get_nearest_oppo_dist(norm, dataset, batch_size):
     #This could induce bias, hence we now use the test images preprocessing on train image as well.
     #Distance is measured with those transforms for later evaluation on test images.
     if dataset in ['ImageNet', 'ImageNet-100', 'TreeSAT', 'Casting-Product-Quality', 
-                       'Describable-Textures', 'Flickr-Material']:
-        data_class.transforms_preprocess_train = transforms.Compose([transforms.Resize(256, antialias=True), 
+                       'Describable-Textures', 'Flickr-Material', 'SynthiCAD']:
+        data_class.transforms_preprocess_train = transforms.Compose([transforms.Resize(232, antialias=True), 
                                                                      transforms.CenterCrop(224)])
     elif dataset in ['KITTI_RoadLane', 'KITTI_Distance_Multiclass']:
         data_class.transforms_preprocess_train = transforms.Resize((384,1280), antialias=True)
+    elif dataset in ['WaferMap']:
+        #getting rid of any random padding
+        data_class.transforms_preprocess_train = transforms.Compose([
+                    transforms.ToImage(), 
+                    transforms.ToDtype(torch.float32), #no scaling
+                    custom_transforms.DivideBy3(),
+                    custom_transforms.ExpandGrayscaleTensorTo3Channels(),
+                    transforms.Pad(6) #our test time transform just pads 6px. 
+                ])
 
     data_class.load_base_data()
     trainset = SubsetWithTransform(data_class.base_trainset, data_class.transforms_preprocess_train)
@@ -199,11 +210,12 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    for dataset in ['KITTI_Distance_Multiclass', 'WaferMap', 
-                    'TreeSAT', 'Casting-Product-Quality', 'EuroSAT', 'TinyImageNet', 'PCAM', 'ImageNet-100', 'ImageNet']:
+    for dataset in ['SynthiCAD', 'PCAM', 'ImageNet-100']:
         
         for norm_distance in [1, 2, np.inf]:
-
+            if dataset in ['SynthiCAD'] and norm_distance in [2]:
+                print('skipping')
+                continue
             #random seeding for reproducibility (this is only important should random preprocessing be used - 
             #here we use only deterministic test image preprocessing all around, so seed should not make a difference.)
             torch.manual_seed(0)
@@ -218,26 +230,36 @@ if __name__ == '__main__':
             traintrain = np.sort(traintrain_ret[traintrain_ret != 0])
             traintest = np.sort(traintest_ret[traintest_ret != 0])
             testtest = np.sort(testtest_ret[testtest_ret != 0])
-            print(traintrain[0:10])
-            print(traintest[0:10])
-            print(testtest[0:10])
+            first_distances_to_save = 100
                 
-            ret = np.array([[len(traintrain_ret), len(traintest_ret), len(testtest_ret)],
-                            [traintrain_ret.mean(), traintest_ret.mean(), testtest_ret.mean()],
-                            [traintrain_ret.min(), traintest_ret.min(), testtest_ret.min()],
-                            [traintrain[1], traintest[1], testtest[1]],
-                            [traintrain[2], traintest[2], testtest[2]],
-                            [traintrain[3], traintest[3], testtest[3]],
-                            [traintrain[4], traintest[4], testtest[4]],
-                            [traintrain[5], traintest[5], testtest[5]],
-                            [traintrain[6], traintest[6], testtest[6]],
-                            [traintrain[7], traintest[7], testtest[7]],
-                            [traintrain[8], traintest[8], testtest[8]],
-                            [traintrain[9], traintest[9], testtest[9]]])
-            df_ret = pd.DataFrame(ret, 
-                                columns=['Train-Train', 'Train-Test', 'Test-Test'], 
-                                index=['non-zero images','Mean Distance', 'Minimal Distance', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th'])
-            print(df_ret)
+            summary = np.array([
+                [len(traintrain), len(traintest), len(testtest)],
+                [traintrain.mean(), traintest.mean(), testtest.mean()],
+                [traintrain.min(), traintest.min(), testtest.min()]
+            ])
+
+            # Stack indexed rows from 0–99
+            # shape -> (100, 3)
+            indexed = np.stack([
+                traintrain[1:first_distances_to_save],
+                traintest[1:first_distances_to_save],
+                testtest[1:first_distances_to_save]
+            ], axis=1)
+
+            # Concatenate summary rows on top
+            ret = np.vstack([summary, indexed])
+
+            index_labels = ['non-zero images', 'Mean Distance', 'Minimal Distance'] + [
+                f'{i+1}th' for i in range(1, first_distances_to_save)
+            ]
+            
+            # build DataFrame
+            df_ret = pd.DataFrame(
+                ret,
+                columns=['Train-Train', 'Train-Test', 'Test-Test'],
+                index=index_labels
+            )
+
             epsilon_min = ret[2, :].min()/2
             print("Epsilon: ", epsilon_min)
 

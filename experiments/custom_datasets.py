@@ -180,6 +180,11 @@ class HDF5ImageDataset(Dataset):
         with h5py.File(self.path_images, "r") as f:
             self._length = f[self._key_img].shape[0]
 
+            if "class_to_idx" in f.attrs:
+                self.class_to_idx = json.loads(f.attrs["class_to_idx"])
+            elif "label_names" in f.attrs:
+                self.label_names = json.loads(f.attrs["label_names"])
+
     def __len__(self):
         return int(self._length)
 

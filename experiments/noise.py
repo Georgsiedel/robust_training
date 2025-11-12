@@ -1,13 +1,8 @@
 import re
 import torch
-import torchvision
 import math
-from torchvision import datasets
-import torchvision.transforms as transforms
-from skimage.util import random_noise
 import numpy as np
 import random
-import matplotlib.pyplot as plt
 import torch.distributions as dist
 from data import normalization_values
 from utils import plot_images

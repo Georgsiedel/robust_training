@@ -63,7 +63,7 @@ def compute_c_corruptions(dataset, testsets_c, model, batchsize, num_classes, cr
     for corruption, corruption_testset in testsets_c.items():
         workers = workers if corruption in ['combined', 'caustic_refraction', 'perlin_noise', 'plasma_noise', 'sparkles'] else 0 #compute heavier corruptions
         if dataset in ['ImageNet','ImageNet-100', 'KITTI_RoadLane', 'KITTI_Distance_Multiclass', 'TreeSAT', 
-                       'Casting-Product-Quality', 'Describable-Textures', 'Flickr-Material']:
+                       'Casting-Product-Quality', 'Describable-Textures', 'Flickr-Material', 'SynthiCAD']:
             workers = workers
         testloader_c = DataLoader(corruption_testset, batch_size=batchsize, shuffle=False, pin_memory=True, num_workers=workers, 
                                   worker_init_fn=seed_worker, generator=t)

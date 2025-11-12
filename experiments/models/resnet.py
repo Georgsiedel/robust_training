@@ -121,7 +121,7 @@ class ResNet(ct_model.CtModel):
 
 
 def ResNet18(num_classes, dataset, normalized, factor, activation_function='relu'):
-    if dataset in ['ImageNet', 'ImageNet-100', 'TreeSAT', 'Casting-Product-Quality', 
+    if dataset in ['ImageNet', 'ImageNet-100', 'TreeSAT', 'Casting-Product-Quality', 'SynthiCAD',
                        'Describable-Textures', 'Flickr-Material', 'KITTI_RoadLane', 'KITTI_Distance_Multiclass']:
         return in_resnet.resnet18(dataset=dataset, normalized=normalized, activation_function=activation_function, num_classes=num_classes)
     else:
@@ -129,7 +129,7 @@ def ResNet18(num_classes, dataset, normalized, factor, activation_function='relu
                   activation_function=activation_function)
     
 def PreActResNet18(num_classes, dataset, normalized, factor, activation_function='relu'):
-        if dataset in ['ImageNet', 'ImageNet-100', 'TreeSAT', 'Casting-Product-Quality', 
+        if dataset in ['ImageNet', 'ImageNet-100', 'TreeSAT', 'Casting-Product-Quality', 'SynthiCAD',
                        'Describable-Textures', 'Flickr-Material', 'KITTI_RoadLane', 'KITTI_Distance_Multiclass']:
             return in_resnet.resnet18(weights=in_resnet.ResNet18_Weights.IMAGENET1K_V1, dataset=dataset, normalized=normalized, activation_function=activation_function, num_classes=num_classes)
         else:
@@ -140,7 +140,7 @@ def ResNet34(num_classes, dataset, normalized, factor, activation_function='relu
                   activation_function=activation_function)
 
 def ResNet50(num_classes, dataset, normalized, factor, activation_function='relu'):
-    if dataset in ['ImageNet', 'ImageNet-100', 'TreeSAT', 'Casting-Product-Quality', 
+    if dataset in ['ImageNet', 'ImageNet-100', 'TreeSAT', 'Casting-Product-Quality', 'SynthiCAD', 
                        'Describable-Textures', 'Flickr-Material', 'KITTI_RoadLane', 'KITTI_Distance_Multiclass']:
         return in_resnet.resnet50(dataset=dataset, normalized=normalized, activation_function=activation_function, num_classes=num_classes)
     else:
@@ -148,7 +148,7 @@ def ResNet50(num_classes, dataset, normalized, factor, activation_function='relu
                   activation_function=activation_function)
     
 def PreActResNet50(num_classes, dataset, normalized, factor, activation_function='relu'):
-        if dataset in ['ImageNet', 'ImageNet-100', 'TreeSAT', 'Casting-Product-Quality', 
+        if dataset in ['ImageNet', 'ImageNet-100', 'TreeSAT', 'Casting-Product-Quality', 'SynthiCAD', 
                        'Describable-Textures', 'Flickr-Material', 'KITTI_RoadLane', 'KITTI_Distance_Multiclass']:
             return in_resnet.resnet50(weights=in_resnet.ResNet50_Weights.IMAGENET1K_V2, dataset=dataset, normalized=normalized, activation_function=activation_function, num_classes=num_classes)
         else:

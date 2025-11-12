@@ -71,41 +71,34 @@ def compute_clean(testloader, model, num_classes, dataset):
     with torch.no_grad():
         correct = 0
         total = 0
+
         if dataset in ['WaferMap', 'KITTI_Distance_Multiclass']:
             calibration_metric = BinaryCalibrationError(n_bins=15, norm='l1')
         else:
             calibration_metric = MulticlassCalibrationError(num_classes=num_classes, n_bins=15, norm='l1')
-        all_targets = torch.empty(0)
-        all_targets_pred = torch.empty((0, num_classes))
-        all_targets, all_targets_pred = all_targets.to(device), all_targets_pred.to(device)
+        calibration_metric = calibration_metric.to(device)    
 
-        for batch_idx, (inputs, targets) in enumerate(testloader):
-
+        for inputs, targets in testloader:
+            
+            total += targets.size(0)
+            
             inputs, targets = inputs.to(device, dtype=torch.float), targets.to(device)
             with torch.amp.autocast('cuda'):
-                targets_pred = model(inputs)
-            
+                outputs = model(inputs)
+
             if dataset in ['WaferMap', 'KITTI_Distance_Multiclass']:
-                predicted = (targets_pred > 0.5).float()    
-            else:
-                _, predicted = targets_pred.max(1)
-
-            total += targets.size(0)
-
-            if dataset in ['WaferMap','KITTI_Distance_Multiclass']:
+                predicted = (torch.sigmoid(outputs) > 0.5).float()
                 matches = predicted.eq(targets)  # shape: [batch_size, num_labels]
                 exact_match = matches.all(dim=1)  # shape: [batch_size], bool tensor
                 correct += exact_match.sum().item()
             else:
+                _, predicted = outputs.max(1)
                 correct += predicted.eq(targets).sum().item()
-            all_targets = torch.cat((all_targets, targets), 0)
-            all_targets_pred = torch.cat((all_targets_pred, targets_pred), 0)
+            
+            calibration_metric.update(outputs, targets)
 
         acc = 100.*correct/total
-        if dataset in ['WaferMap', 'KITTI_Distance_Multiclass']:
-            rmsce_clean = float(calibration_metric(all_targets_pred.view(-1), all_targets.view(-1)).cpu())
-        else:
-            rmsce_clean = float(calibration_metric(all_targets_pred, all_targets).cpu())
+        rmsce_clean = float(calibration_metric.compute().cpu())
         print("Clean Accuracy ", acc, "%, RMSCE Calibration Error: ", rmsce_clean)
 
         return acc, rmsce_clean

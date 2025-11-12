@@ -16,12 +16,12 @@ if __name__ == '__main__':
         kaggle = False
 
         print('Starting experiment #',experiment, 'on', config.dataset, 'dataset')
-        runs = 3
-        run_iters = [0,1,2]
+        runs = 1
+        run_iters = [0]
 
         for run in run_iters:
 
-            resume = True if experiment in [3] and run in [0,1] else False
+            resume = True if experiment in [] and run in [0,1] else False
 
             print("Training run #",run)
             cmd0 = f"python experiments/train.py --resume={resume} --run={run} --experiment={experiment} --epochs=" \

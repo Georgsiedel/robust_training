@@ -533,7 +533,7 @@ class TestTracking:
                 test_corruptions_label = np.loadtxt(os.path.abspath(f'{self.c_labels_path}/c-labels.txt'), dtype=list)
                 if self.dataset in ['CIFAR10', 'CIFAR100', 'GTSRB', 'WaferMap']:
                     test_corruptions_bar_label = np.loadtxt(os.path.abspath(f'{self.c_labels_path}/c-bar-labels-cifar.txt'), dtype=list)
-                elif self.dataset in ['ImageNet', 'ImageNet-100', 'TinyImageNet', 'EuroSAT', 'PCAM', 'KITTI_RoadLane', 
+                elif self.dataset in ['ImageNet', 'ImageNet-100', 'TinyImageNet', 'EuroSAT', 'PCAM', 'KITTI_RoadLane', 'SynthiCAD',
                        'KITTI_Distance_Multiclass', 'TreeSAT', 'Casting-Product-Quality', 'Describable-Textures', 'Flickr-Material']:
                     test_corruptions_bar_label = np.loadtxt(os.path.abspath(f'{self.c_labels_path}/c-bar-labels-IN.txt'), dtype=list)
                 else:
