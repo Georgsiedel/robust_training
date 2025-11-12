@@ -7,3 +7,6 @@
 [submodule "ImageNet-100-Pytorch"]
 	path = ImageNet-100-Pytorch
 	url = https://github.com/georgsiedel/ImageNet-100-Pytorch.git
+[submodule "KITTI-distance-estimation"]
+	path = KITTI-distance-estimation
+	url = https://github.com/georgsiedel/KITTI-distance-estimation.git
