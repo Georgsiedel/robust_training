@@ -4,3 +4,6 @@
 [submodule "latent-diffusion"]
 	path = latent-diffusion
 	url = https://github.com/georgsiedel/latent-diffusion.git
+[submodule "ImageNet-100-Pytorch"]
+	path = ImageNet-100-Pytorch
+	url = https://github.com/georgsiedel/ImageNet-100-Pytorch.git
