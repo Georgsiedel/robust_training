@@ -156,6 +156,7 @@ Multi-dimensional robustness evaluation options can be selected in the experimen
 - real-world c-corruptions (precomputed test benchmarks for CIFAR, TinyImageNet and ImageNet, computed on the fly for other datasets or validation splits)
 - diverse c-bar corruptions that are dissimilar in their frequency spectrum
 - diverse precomputed ImageNet benchmarks (A, R, ES, Sketch, v2)
+- Accuracy on diverse p-norm noise, including class-separated and imperceptible noise as parametrized in `experiments/distance.py` and `experiments/noise.py`
 - AutoAttack adversarial accuracy
 - Adversarial Distance
 - CLEVER score (estimated lower bound adversarial distance)
