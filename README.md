@@ -1,4 +1,4 @@
-# Stylized Synthetic Augmentation Further Improves Corruption Robustness
+# On Improving and Evaluating the Corruption Robustness of Industrial Image Classification Models through Data Augmentation
 
 This repository accompanies the dissertation **“On Improving and Evaluating the Corruption Robustness of Industrial Image Classification Models through Data Augmentation”**. It comprises methods from the following papers:
 * [Stylized Synthetic Augmentation (arXiv:2512.15675)](https://arxiv.org/abs/2512.15675)
